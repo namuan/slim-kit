@@ -5,22 +5,20 @@ import UniformTypeIdentifiers
 struct PhotoResourceExporter {
     static func measure(
         assetIdentifier: String,
-        networkAccessAllowed: Bool = false
+        networkAccessAllowed: Bool = false,
+        source: any ResourceExportSource = PhotoKitResourceSource(),
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
     ) async throws -> VerifiedResourceMeasurement {
-        guard canReadPhotos else { throw ResourceExportError.accessUnavailable }
-        guard let asset = fetchAsset(assetIdentifier) else { throw ResourceExportError.assetUnavailable }
-        let selectedResource = try selectResource(for: asset)
-        guard let sourceModificationDate = asset.modificationDate else {
-            throw ResourceExportError.sourceStateUnavailable
-        }
+        guard source.canReadPhotos else { throw ResourceExportError.accessUnavailable }
+        let selectedResource = try source.selectResource(assetIdentifier: assetIdentifier)
         try Task.checkCancellation()
-        let exportedResource = try await exportResource(selectedResource, networkAccessAllowed: networkAccessAllowed)
-        try Task.checkCancellation()
-        try verifySource(
-            assetIdentifier: assetIdentifier,
-            modificationDate: sourceModificationDate,
-            resourceSelectionBasis: selectedResource.basis
+        let exportedResource = try await exportResource(
+            selectedResource,
+            networkAccessAllowed: networkAccessAllowed,
+            temporaryDirectory: temporaryDirectory
         )
+        try Task.checkCancellation()
+        try selectedResource.verifySource()
         AppLogger.shared.info(
             "ResourceExport",
             "Verified selected resource; kind=\(selectedResource.kind); bytes=\(exportedResource.byteCount); " +
@@ -30,7 +28,7 @@ struct PhotoResourceExporter {
             size: VerifiedResourceSize(
                 assetID: assetIdentifier,
                 byteCount: exportedResource.byteCount,
-                sourceModificationDate: sourceModificationDate,
+                sourceModificationDate: selectedResource.sourceModificationDate,
                 resourceSelectionBasis: selectedResource.basis,
                 measuredAt: .now
             ),
@@ -40,11 +38,13 @@ struct PhotoResourceExporter {
 
     private static func exportResource(
         _ selectedResource: SelectedResource,
-        networkAccessAllowed: Bool
+        networkAccessAllowed: Bool,
+        temporaryDirectory: URL
     ) async throws -> ExportedResource {
-        let fileExtension = UTType(selectedResource.resource.uniformTypeIdentifier)?.preferredFilenameExtension
-        let filename = fileExtension.map { "source-resource.\($0)" } ?? "source-resource"
-        return try await ResourceExportWorkspace.withTemporaryResource(filename: filename) { resourceURL in
+        return try await ResourceExportWorkspace.withTemporaryResource(
+            in: temporaryDirectory,
+            filename: selectedResource.filename
+        ) { resourceURL in
             let fileHandle: FileHandle
             do {
                 fileHandle = try FileHandle(forWritingTo: resourceURL)
@@ -52,11 +52,10 @@ struct PhotoResourceExporter {
                 throw ResourceExportError.exportFailed
             }
             defer { try? fileHandle.close() }
-            let byteCount = try await transfer(
-                selectedResource.resource,
-                to: fileHandle,
-                at: resourceURL,
-                networkAccessAllowed: networkAccessAllowed
+            let byteCount = try await selectedResource.transfer(
+                fileHandle,
+                resourceURL,
+                networkAccessAllowed
             )
             try fileHandle.close()
             let capabilities: MediaCapabilityDecision
@@ -70,7 +69,7 @@ struct PhotoResourceExporter {
         }
     }
 
-    private static func transfer(
+    static func transfer(
         _ resource: PHAssetResource,
         to fileHandle: FileHandle,
         at resourceURL: URL,
@@ -113,7 +112,7 @@ struct PhotoResourceExporter {
         return try operation.verifiedByteCount(fileByteCount: fileByteCount)
     }
 
-    private static func verifySource(
+    static func verifySource(
         assetIdentifier: String,
         modificationDate: Date,
         resourceSelectionBasis: String
@@ -129,15 +128,15 @@ struct PhotoResourceExporter {
         }
     }
 
-    private static var canReadPhotos: Bool {
+    static var canReadPhotos: Bool {
         PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite)).canRead
     }
 
-    private static func fetchAsset(_ identifier: String) -> PHAsset? {
+    static func fetchAsset(_ identifier: String) -> PHAsset? {
         PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
     }
 
-    private static func selectResource(for asset: PHAsset) throws -> SelectedResource {
+    static func selectResource(for asset: PHAsset) throws -> PhotoKitSelectedResource {
         let eligibility = MediaEligibilityClassifier.classify(asset: asset)
         let expectedType: PHAssetResourceType
         let kind: MediaAsset.Kind
@@ -162,7 +161,7 @@ struct PhotoResourceExporter {
             throw ResourceExportError.unsupported("The item does not have one unambiguous original resource.")
         }
         let basis = "\(kind.rawValue)|\(resource.type.rawValue)|\(resource.uniformTypeIdentifier)"
-        return SelectedResource(resource: resource, kind: kind, basis: basis)
+        return PhotoKitSelectedResource(resource: resource, kind: kind, basis: basis)
     }
 }
 
@@ -190,10 +189,65 @@ private struct ExportedResource {
     let capabilities: MediaCapabilityDecision
 }
 
-private struct SelectedResource {
+protocol ResourceExportSource {
+    var canReadPhotos: Bool { get }
+
+    func selectResource(assetIdentifier: String) throws -> SelectedResource
+}
+
+struct SelectedResource {
+    let sourceModificationDate: Date
+    let kind: MediaAsset.Kind
+    let basis: String
+    let filename: String
+    let transfer: (FileHandle, URL, Bool) async throws -> Int64
+    let verifySource: () throws -> Void
+}
+
+struct PhotoKitSelectedResource {
     let resource: PHAssetResource
     let kind: MediaAsset.Kind
     let basis: String
+}
+
+struct PhotoKitResourceSource: ResourceExportSource {
+    var canReadPhotos: Bool {
+        PhotoResourceExporter.canReadPhotos
+    }
+
+    func selectResource(assetIdentifier: String) throws -> SelectedResource {
+        guard canReadPhotos else { throw ResourceExportError.accessUnavailable }
+        guard let asset = PhotoResourceExporter.fetchAsset(assetIdentifier) else {
+            throw ResourceExportError.assetUnavailable
+        }
+        let photoKitResource = try PhotoResourceExporter.selectResource(for: asset)
+        guard let sourceModificationDate = asset.modificationDate else {
+            throw ResourceExportError.sourceStateUnavailable
+        }
+        let fileExtension = UTType(photoKitResource.resource.uniformTypeIdentifier)?.preferredFilenameExtension
+        let filename = fileExtension.map { "source-resource.\($0)" } ?? "source-resource"
+        return SelectedResource(
+            sourceModificationDate: sourceModificationDate,
+            kind: photoKitResource.kind,
+            basis: photoKitResource.basis,
+            filename: filename,
+            transfer: { fileHandle, resourceURL, networkAccessAllowed in
+                try await PhotoResourceExporter.transfer(
+                    photoKitResource.resource,
+                    to: fileHandle,
+                    at: resourceURL,
+                    networkAccessAllowed: networkAccessAllowed
+                )
+            },
+            verifySource: {
+                try PhotoResourceExporter.verifySource(
+                    assetIdentifier: assetIdentifier,
+                    modificationDate: sourceModificationDate,
+                    resourceSelectionBasis: photoKitResource.basis
+                )
+            }
+        )
+    }
 }
 
 final class ResourceExportOperation: @unchecked Sendable {
