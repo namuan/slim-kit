@@ -295,27 +295,28 @@ enum MediaCapabilityInspector {
     }
 
     private static func auxiliaryDataTypes(source: CGImageSource, properties: [String: Any]) -> [String] {
-        var knownTypes: [CFString] = [
-            kCGImageAuxiliaryDataTypeDepth,
-            kCGImageAuxiliaryDataTypeDisparity,
-            kCGImageAuxiliaryDataTypePortraitEffectsMatte,
-            kCGImageAuxiliaryDataTypeSemanticSegmentationSkinMatte,
-            kCGImageAuxiliaryDataTypeSemanticSegmentationHairMatte,
-            kCGImageAuxiliaryDataTypeSemanticSegmentationTeethMatte,
-            kCGImageAuxiliaryDataTypeSemanticSegmentationSkyMatte,
-            kCGImageAuxiliaryDataTypeHDRGainMap
+        var knownTypes: [(type: CFString, label: String)] = [
+            (kCGImageAuxiliaryDataTypeDepth, "depth"),
+            (kCGImageAuxiliaryDataTypeDisparity, "disparity"),
+            (kCGImageAuxiliaryDataTypePortraitEffectsMatte, "portrait effects matte"),
+            (kCGImageAuxiliaryDataTypeSemanticSegmentationSkinMatte, "skin matte"),
+            (kCGImageAuxiliaryDataTypeSemanticSegmentationHairMatte, "hair matte"),
+            (kCGImageAuxiliaryDataTypeSemanticSegmentationTeethMatte, "teeth matte"),
+            (kCGImageAuxiliaryDataTypeSemanticSegmentationSkyMatte, "sky matte"),
+            (kCGImageAuxiliaryDataTypeHDRGainMap, "HDR gain map")
         ]
         if #available(macOS 14.1, *) {
-            knownTypes.append(kCGImageAuxiliaryDataTypeSemanticSegmentationGlassesMatte)
+            knownTypes.append((kCGImageAuxiliaryDataTypeSemanticSegmentationGlassesMatte, "glasses matte"))
         }
         if #available(macOS 15.0, *) {
-            knownTypes.append(kCGImageAuxiliaryDataTypeISOGainMap)
+            knownTypes.append((kCGImageAuxiliaryDataTypeISOGainMap, "ISO gain map"))
         }
-        var result = knownTypes.compactMap { type in
-            CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, type) == nil ? nil : type as String
+        var result = knownTypes.compactMap { entry in
+            CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, entry.type) == nil ? nil : entry.label
         }
         let propertyTypes = (properties[kCGImagePropertyAuxiliaryData as String] as? [[String: Any]])?
-            .compactMap { $0[kCGImagePropertyAuxiliaryDataType as String] as? String } ?? []
+            .compactMap { $0[kCGImagePropertyAuxiliaryDataType as String] as? String }
+            .map { type in knownTypes.first(where: { $0.type as String == type })?.label ?? type } ?? []
         result.append(contentsOf: propertyTypes)
         return Array(Set(result)).sorted()
     }

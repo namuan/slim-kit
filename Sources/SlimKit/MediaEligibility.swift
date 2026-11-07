@@ -89,7 +89,7 @@ enum MediaEligibilityClassifier {
         return classify(kind: kind, mediaSubtypeRawValue: asset.mediaSubtypes.rawValue, resources: descriptors)
     }
 
-    private static func resourceKind(_ type: PHAssetResourceType) -> MediaResourceDescriptor.Kind {
+    static func resourceKind(_ type: PHAssetResourceType) -> MediaResourceDescriptor.Kind {
         switch type {
         case .photo:
             .photo

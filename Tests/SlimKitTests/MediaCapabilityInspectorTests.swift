@@ -65,6 +65,17 @@ final class MediaCapabilityInspectorTests: XCTestCase {
         XCTAssertEqual(MediaCapabilityInspector.inspectImage(at: url), .supported)
     }
 
+    func testImageInspectorRejectsEncodedDepthAuxiliaryData() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try createDepthJPEG(at: url)
+
+        XCTAssertEqual(
+            MediaCapabilityInspector.inspectImage(at: url),
+            .unsupported("The image contains auxiliary data: depth.")
+        )
+    }
+
     func testUnreadableImageSourceIsUncertain() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         XCTAssertEqual(

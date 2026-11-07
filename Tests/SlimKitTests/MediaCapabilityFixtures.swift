@@ -126,6 +126,31 @@ extension MediaCapabilityInspectorTests {
         XCTAssertTrue(CGImageDestinationFinalize(destination))
     }
 
+    func createDepthJPEG(at url: URL) throws {
+        let destination = try imageDestination(at: url, type: UTType.jpeg.identifier, imageCount: 1)
+        CGImageDestinationAddImage(destination, try fixtureImage(alpha: false), nil)
+        let depthValues: [Float] = [0.5, 1.0, 1.5, 2.0]
+        let depthData = depthValues.withUnsafeBytes { Data($0) }
+        let description: [String: Any] = [
+            kCGImagePropertyWidth as String: 2,
+            kCGImagePropertyHeight as String: 2,
+            kCGImagePropertyBytesPerRow as String: 2 * MemoryLayout<Float>.stride,
+            kCGImagePropertyPixelFormat as String: Int(kCVPixelFormatType_DepthFloat32)
+        ]
+        let metadata = CGImageMetadataCreateMutable()
+        let auxiliaryData: [String: Any] = [
+            kCGImageAuxiliaryDataInfoData as String: depthData,
+            kCGImageAuxiliaryDataInfoDataDescription as String: description,
+            kCGImageAuxiliaryDataInfoMetadata as String: metadata
+        ]
+        CGImageDestinationAddAuxiliaryDataInfo(
+            destination,
+            kCGImageAuxiliaryDataTypeDepth,
+            auxiliaryData as CFDictionary
+        )
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+    }
+
     func createAnimatedGIF(at url: URL) throws {
         let destination = try imageDestination(at: url, type: UTType.gif.identifier, imageCount: 2)
         let firstImage = try fixtureImage(alpha: false, gray: 0.25)

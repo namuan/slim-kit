@@ -112,18 +112,23 @@ struct PhotoResourceExporter {
         return try operation.verifiedByteCount(fileByteCount: fileByteCount)
     }
 
-    static func verifySource(
-        assetIdentifier: String,
-        modificationDate: Date,
-        resourceSelectionBasis: String
-    ) throws {
+    static func verifySource(expectedIdentity: ResourceExportSourceIdentity) throws {
         guard canReadPhotos,
-              let currentAsset = fetchAsset(assetIdentifier),
-              currentAsset.modificationDate == modificationDate else {
+              let currentAsset = fetchAsset(expectedIdentity.assetIdentifier),
+              currentAsset.modificationDate == expectedIdentity.modificationDate else {
             throw ResourceExportError.sourceChanged
         }
-        let currentResource = try selectResource(for: currentAsset)
-        guard currentResource.basis == resourceSelectionBasis else {
+        let currentResource: PhotoKitSelectedResource
+        do {
+            currentResource = try selectResource(for: currentAsset)
+        } catch {
+            throw ResourceExportError.sourceChanged
+        }
+        guard expectedIdentity.matches(
+            assetIdentifier: currentAsset.localIdentifier,
+            modificationDate: currentAsset.modificationDate,
+            resourceSelectionBasis: currentResource.basis
+        ) else {
             throw ResourceExportError.sourceChanged
         }
     }
@@ -137,31 +142,36 @@ struct PhotoResourceExporter {
     }
 
     static func selectResource(for asset: PHAsset) throws -> PhotoKitSelectedResource {
-        let eligibility = MediaEligibilityClassifier.classify(asset: asset)
-        let expectedType: PHAssetResourceType
         let kind: MediaAsset.Kind
-        switch eligibility {
-        case .inspectImageSource:
-            expectedType = .photo
+        switch asset.mediaType {
+        case .image:
             kind = .photo
-        case .inspectVideoSource:
-            expectedType = .video
+        case .video:
             kind = .video
-        case .pendingInspection:
-            throw ResourceExportError.unsupported("The Photos item has not been classified.")
-        case .capabilitiesInspected:
-            throw ResourceExportError.unsupported("The source capabilities have already been inspected.")
-        case let .uncertain(reason):
-            throw ResourceExportError.unsupported(reason)
-        case let .unsupported(reason), let .unavailable(reason):
-            throw ResourceExportError.unsupported(reason)
+        default:
+            throw ResourceExportError.unsupported("Only photos and videos are supported.")
         }
         let resources = PHAssetResource.assetResources(for: asset)
-        guard resources.count == 1, let resource = resources.first, resource.type == expectedType else {
+        let candidates = resources.map { resource in
+            PhotoResourceCandidate(
+                typeRawValue: resource.type.rawValue,
+                kind: MediaEligibilityClassifier.resourceKind(resource.type),
+                uniformTypeIdentifier: resource.uniformTypeIdentifier
+            )
+        }
+        let selection = try PhotoResourceSelector.select(
+            kind: kind,
+            mediaSubtypeRawValue: asset.mediaSubtypes.rawValue,
+            resources: candidates
+        )
+        guard let resource = resources.first else {
             throw ResourceExportError.unsupported("The item does not have one unambiguous original resource.")
         }
-        let basis = "\(kind.rawValue)|\(resource.type.rawValue)|\(resource.uniformTypeIdentifier)"
-        return PhotoKitSelectedResource(resource: resource, kind: kind, basis: basis)
+        return PhotoKitSelectedResource(
+            resource: resource,
+            kind: selection.kind,
+            basis: selection.resourceSelectionBasis
+        )
     }
 }
 
@@ -224,6 +234,11 @@ struct PhotoKitResourceSource: ResourceExportSource {
         guard let sourceModificationDate = asset.modificationDate else {
             throw ResourceExportError.sourceStateUnavailable
         }
+        let identity = ResourceExportSourceIdentity(
+            assetIdentifier: assetIdentifier,
+            modificationDate: sourceModificationDate,
+            resourceSelectionBasis: photoKitResource.basis
+        )
         let fileExtension = UTType(photoKitResource.resource.uniformTypeIdentifier)?.preferredFilenameExtension
         let filename = fileExtension.map { "source-resource.\($0)" } ?? "source-resource"
         return SelectedResource(
@@ -240,11 +255,7 @@ struct PhotoKitResourceSource: ResourceExportSource {
                 )
             },
             verifySource: {
-                try PhotoResourceExporter.verifySource(
-                    assetIdentifier: assetIdentifier,
-                    modificationDate: sourceModificationDate,
-                    resourceSelectionBasis: photoKitResource.basis
-                )
+                try PhotoResourceExporter.verifySource(expectedIdentity: identity)
             }
         )
     }

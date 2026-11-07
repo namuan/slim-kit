@@ -18,15 +18,39 @@ struct MediaAsset: Identifiable, Hashable, Sendable {
     var eligibility: MediaEligibility
 
     init(asset: PHAsset) {
-        id = asset.localIdentifier
-        kind = asset.mediaType == .video ? .video : .photo
-        creationDate = asset.creationDate
-        modificationDate = asset.modificationDate
-        pixelWidth = asset.pixelWidth
-        pixelHeight = asset.pixelHeight
-        duration = asset.mediaType == .video ? asset.duration : nil
-        isFavorite = asset.isFavorite
-        eligibility = .pendingInspection
+        self.init(
+            id: asset.localIdentifier,
+            kind: asset.mediaType == .video ? .video : .photo,
+            creationDate: asset.creationDate,
+            modificationDate: asset.modificationDate,
+            pixelWidth: asset.pixelWidth,
+            pixelHeight: asset.pixelHeight,
+            duration: asset.mediaType == .video ? asset.duration : nil,
+            isFavorite: asset.isFavorite,
+            eligibility: .pendingInspection
+        )
+    }
+
+    init(
+        id: String,
+        kind: Kind,
+        creationDate: Date?,
+        modificationDate: Date?,
+        pixelWidth: Int,
+        pixelHeight: Int,
+        duration: TimeInterval?,
+        isFavorite: Bool,
+        eligibility: MediaEligibility
+    ) {
+        self.id = id
+        self.kind = kind
+        self.creationDate = creationDate
+        self.modificationDate = modificationDate
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.duration = duration
+        self.isFavorite = isFavorite
+        self.eligibility = eligibility
     }
 }
 
