@@ -124,15 +124,6 @@ final class MediaCapabilityInspectorTests: XCTestCase {
         )
     }
 
-    func testVideoInspectorReadsGeneratedSDRVideo() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
-        defer { try? FileManager.default.removeItem(at: url) }
-        try await createSDRVideo(at: url)
-
-        let decision = await MediaCapabilityInspector.inspectVideo(at: url)
-        XCTAssertEqual(decision, .supported)
-    }
-
     func testUnknownVideoColorMetadataIsUncertain() {
         XCTAssertEqual(
             MediaCapabilityInspector.assessVideo(

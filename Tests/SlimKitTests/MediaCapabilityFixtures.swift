@@ -7,21 +7,28 @@ import UniformTypeIdentifiers
 import XCTest
 
 extension MediaCapabilityInspectorTests {
-    func createSDRVideo(at url: URL) async throws {
+    func createVideo(
+        at url: URL,
+        videoTrackCount: Int = 1,
+        colorPrimaries: String = AVVideoColorPrimaries_ITU_R_709_2,
+        transferFunction: String = AVVideoTransferFunction_ITU_R_709_2
+    ) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        let input = AVAssetWriterInput(
-            mediaType: .video,
-            outputSettings: [
-                AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: 16,
-                AVVideoHeightKey: 16,
-                AVVideoColorPropertiesKey: [
-                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+        let inputs = (0..<videoTrackCount).map { _ in
+            AVAssetWriterInput(
+                mediaType: .video,
+                outputSettings: [
+                    AVVideoCodecKey: AVVideoCodecType.h264,
+                    AVVideoWidthKey: 16,
+                    AVVideoHeightKey: 16,
+                    AVVideoColorPropertiesKey: [
+                        AVVideoColorPrimariesKey: colorPrimaries,
+                        AVVideoTransferFunctionKey: transferFunction,
+                        AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                    ]
                 ]
-            ]
-        )
+            )
+        }
         let attributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: 16,
@@ -29,22 +36,27 @@ extension MediaCapabilityInspectorTests {
             kCVPixelBufferCGImageCompatibilityKey as String: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
         ]
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: input,
-            sourcePixelBufferAttributes: attributes
-        )
-        guard writer.canAdd(input) else { throw MediaFixtureError.writerUnavailable }
-        writer.add(input)
+        guard inputs.allSatisfy(writer.canAdd) else { throw MediaFixtureError.writerUnavailable }
+        inputs.forEach(writer.add)
+        let adaptors = inputs.map {
+            AVAssetWriterInputPixelBufferAdaptor(
+                assetWriterInput: $0,
+                sourcePixelBufferAttributes: attributes
+            )
+        }
         guard writer.startWriting() else { throw writer.error ?? MediaFixtureError.writerUnavailable }
         writer.startSession(atSourceTime: .zero)
         let pixelBuffer = try makePixelBuffer(attributes: attributes)
         for frame in 0..<2 {
-            guard input.isReadyForMoreMediaData,
-                  adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 30)) else {
-                throw writer.error ?? MediaFixtureError.writerUnavailable
+            let presentationTime = CMTime(value: Int64(frame), timescale: 30)
+            for (input, adaptor) in zip(inputs, adaptors) {
+                guard input.isReadyForMoreMediaData,
+                      adaptor.append(pixelBuffer, withPresentationTime: presentationTime) else {
+                    throw writer.error ?? MediaFixtureError.writerUnavailable
+                }
             }
         }
-        input.markAsFinished()
+        inputs.forEach { $0.markAsFinished() }
         await writer.finishWriting()
         guard writer.status == .completed else { throw writer.error ?? MediaFixtureError.writerUnavailable }
     }
@@ -106,6 +118,50 @@ extension MediaCapabilityInspectorTests {
         ]
         CGImageDestinationAddImage(destination, try XCTUnwrap(context.makeImage()), properties as CFDictionary)
         XCTAssertTrue(CGImageDestinationFinalize(destination))
+    }
+
+    func createAlphaPNG(at url: URL) throws {
+        let destination = try imageDestination(at: url, type: UTType.png.identifier, imageCount: 1)
+        CGImageDestinationAddImage(destination, try fixtureImage(alpha: true), nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+    }
+
+    func createAnimatedGIF(at url: URL) throws {
+        let destination = try imageDestination(at: url, type: UTType.gif.identifier, imageCount: 2)
+        let firstImage = try fixtureImage(alpha: false, gray: 0.25)
+        let secondImage = try fixtureImage(alpha: false, gray: 0.75)
+        let frameProperties: [String: Any] = [
+            kCGImagePropertyGIFDictionary as String: [
+                kCGImagePropertyGIFDelayTime as String: 0.1
+            ]
+        ]
+        CGImageDestinationAddImage(destination, firstImage, frameProperties as CFDictionary)
+        CGImageDestinationAddImage(destination, secondImage, frameProperties as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+    }
+
+    private func imageDestination(at url: URL, type: String, imageCount: Int) throws -> CGImageDestination {
+        try XCTUnwrap(
+            CGImageDestinationCreateWithURL(url as CFURL, type as CFString, imageCount, nil)
+        )
+    }
+
+    private func fixtureImage(alpha: Bool, gray: CGFloat = 0.5) throws -> CGImage {
+        let bitmapInfo = alpha ? CGImageAlphaInfo.premultipliedLast.rawValue : CGImageAlphaInfo.noneSkipLast.rawValue
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil,
+                width: 2,
+                height: 2,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
+                bitmapInfo: bitmapInfo
+            )
+        )
+        context.setFillColor(CGColor(gray: gray, alpha: alpha ? 0.5 : 1))
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        return try XCTUnwrap(context.makeImage())
     }
 }
 
