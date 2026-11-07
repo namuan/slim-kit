@@ -1,0 +1,8 @@
+.build/
+.delivery/
+.DS_Store
+DerivedData/
+*.xcuserstate
+*.xcresult/
+.swiftlint_cache/
+xcuserdata/
