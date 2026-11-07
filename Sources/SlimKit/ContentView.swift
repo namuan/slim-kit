@@ -2,15 +2,6 @@ import AppKit
 import SwiftData
 import SwiftUI
 
-private enum LibraryFilter: String, CaseIterable, Identifiable {
-    case all = "All Media"
-    case photos = "Photos"
-    case videos = "Videos"
-    case kept = "Kept"
-
-    var id: String { rawValue }
-}
-
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -50,7 +41,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(LibraryFilter.allCases, selection: $filter) { item in
-                Label(item.rawValue, systemImage: symbol(for: item))
+                Label(item.rawValue, systemImage: item.symbol)
                     .tag(item)
             }
             .navigationTitle("SlimKit")
@@ -173,7 +164,7 @@ struct ContentView: View {
                     ) {
                         ForEach(visibleAssets) { asset in
                             MediaCard(
-                                asset: asset,
+                                asset: assetWithCachedCapability(asset),
                                 sizeLabel: sizeLabel(for: asset),
                                 isSelected: selectedIDs.contains(asset.id),
                                 isKept: keptIDs.contains(asset.id),
@@ -285,15 +276,6 @@ private extension ContentView {
             "This Mac restricts access to Photos. No library changes have been made."
         }
     }
-    func symbol(for filter: LibraryFilter) -> String {
-        switch filter {
-        case .all: "photo.on.rectangle.angled"
-        case .photos: "photo"
-        case .videos: "video"
-        case .kept: "bookmark"
-        }
-    }
-
     func sizeLabel(for asset: MediaAsset) -> String {
         guard let record = sizeRecordsByID[asset.id], record.isValid(for: asset) else {
             return "Size not calculated"
@@ -318,7 +300,12 @@ private extension ContentView {
                         networkAccessAllowed: true
                     )
                     guard !Task.isCancelled else { break }
-                    storeVerifiedSize(measurement.size, for: asset, recordsByID: &recordsByID)
+                    storeVerifiedSize(
+                        measurement.size,
+                        capabilities: measurement.capabilities,
+                        for: asset,
+                        recordsByID: &recordsByID
+                    )
                     library.applyCapabilityDecision(measurement.capabilities, for: asset.id)
                     measuredCount += 1
                 } catch is CancellationError {
@@ -359,18 +346,26 @@ private extension ContentView {
 
     func storeVerifiedSize(
         _ size: VerifiedResourceSize,
+        capabilities: MediaCapabilityDecision,
         for asset: MediaAsset,
         recordsByID: inout [String: VerifiedSizeRecord]
     ) {
         if let record = recordsByID[asset.id] {
-            record.update(with: size)
+            record.update(with: size, capabilities: capabilities)
         } else {
-            let record = VerifiedSizeRecord(size: size)
+            let record = VerifiedSizeRecord(size: size, capabilities: capabilities)
             modelContext.insert(record)
             recordsByID[asset.id] = record
         }
-        let eligibility: MediaEligibility = asset.kind == .photo ? .inspectImageSource : .inspectVideoSource
-        library.updateEligibility(eligibility, for: asset.id)
+    }
+
+    func assetWithCachedCapability(_ asset: MediaAsset) -> MediaAsset {
+        guard asset.eligibility == .pendingInspection,
+              let record = sizeRecordsByID[asset.id],
+              let decision = record.capabilityDecision(for: asset) else { return asset }
+        var displayedAsset = asset
+        displayedAsset.eligibility = MediaEligibilityClassifier.apply(decision)
+        return displayedAsset
     }
 
     func toggleSelection(_ id: String) {

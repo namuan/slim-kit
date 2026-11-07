@@ -1,7 +1,5 @@
-import CoreGraphics
 import CoreMedia
-import ImageIO
-import UniformTypeIdentifiers
+import SwiftData
 import XCTest
 @testable import SlimKit
 
@@ -126,12 +124,125 @@ final class MediaCapabilityInspectorTests: XCTestCase {
         )
     }
 
+    func testVideoInspectorReadsGeneratedSDRVideo() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await createSDRVideo(at: url)
+
+        let decision = await MediaCapabilityInspector.inspectVideo(at: url)
+        XCTAssertEqual(decision, .supported)
+    }
+
     func testUnknownVideoColorMetadataIsUncertain() {
         XCTAssertEqual(
             MediaCapabilityInspector.assessVideo(
                 videoCapabilities(colorPrimaries: nil)
             ),
             .uncertain("Video color metadata is missing.")
+        )
+    }
+
+    func testCapabilityCacheInvalidatesWhenSourceBasisOrInspectorChanges() {
+        let modificationDate = Date(timeIntervalSince1970: 1_000)
+        let identity = MediaCapabilityCacheIdentity(
+            sourceModificationDate: modificationDate,
+            resourceSelectionBasis: "photo|public.jpeg",
+            inspectorVersion: MediaCapabilityInspector.version
+        )
+        XCTAssertTrue(identity.matches(
+            sourceModificationDate: modificationDate,
+            resourceSelectionBasis: "photo|public.jpeg",
+            inspectorVersion: MediaCapabilityInspector.version
+        ))
+        XCTAssertFalse(identity.matches(
+            sourceModificationDate: modificationDate.addingTimeInterval(1),
+            resourceSelectionBasis: "photo|public.jpeg",
+            inspectorVersion: MediaCapabilityInspector.version
+        ))
+        XCTAssertFalse(identity.matches(
+            sourceModificationDate: modificationDate,
+            resourceSelectionBasis: "video|public.mpeg-4",
+            inspectorVersion: MediaCapabilityInspector.version
+        ))
+        XCTAssertFalse(identity.matches(
+            sourceModificationDate: modificationDate,
+            resourceSelectionBasis: "photo|public.jpeg",
+            inspectorVersion: MediaCapabilityInspector.version + 1
+        ))
+    }
+
+    @MainActor
+    func testSwiftDataCapabilityCachePersistsAndInvalidates() throws {
+        let container = try ModelContainer(
+            for: VerifiedSizeRecord.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let modificationDate = Date(timeIntervalSince1970: 1_000)
+        let resourceBasis = "photo|public.jpeg"
+        let size = VerifiedResourceSize(
+            assetID: "asset-1",
+            byteCount: 1_024,
+            sourceModificationDate: modificationDate,
+            resourceSelectionBasis: resourceBasis,
+            measuredAt: modificationDate
+        )
+        context.insert(VerifiedSizeRecord(size: size, capabilities: .unsupported("wide gamut")))
+        try context.save()
+        let record = try XCTUnwrap(context.fetch(FetchDescriptor<VerifiedSizeRecord>()).first)
+
+        XCTAssertEqual(
+            record.capabilityDecision(
+                sourceModificationDate: modificationDate,
+                resourceSelectionBasis: resourceBasis
+            ),
+            .unsupported("wide gamut")
+        )
+        XCTAssertNil(record.capabilityDecision(
+            sourceModificationDate: modificationDate.addingTimeInterval(1),
+            resourceSelectionBasis: resourceBasis
+        ))
+        XCTAssertNil(record.capabilityDecision(
+            sourceModificationDate: modificationDate,
+            resourceSelectionBasis: "photo|public.heic"
+        ))
+        record.capabilityInspectorVersion = MediaCapabilityInspector.version - 1
+        XCTAssertNil(record.capabilityDecision(
+            sourceModificationDate: modificationDate,
+            resourceSelectionBasis: resourceBasis
+        ))
+    }
+
+    func testPersistedCapabilityDecisionRequiresCurrentInspectorVersion() {
+        XCTAssertEqual(
+            MediaCapabilityDecision.restore(
+                status: "supported",
+                reason: nil,
+                inspectorVersion: MediaCapabilityInspector.version
+            ),
+            .supported
+        )
+        XCTAssertEqual(
+            MediaCapabilityDecision.restore(
+                status: "unsupported",
+                reason: "wide gamut",
+                inspectorVersion: MediaCapabilityInspector.version
+            ),
+            .unsupported("wide gamut")
+        )
+        XCTAssertNil(
+            MediaCapabilityDecision.restore(
+                status: "supported",
+                reason: nil,
+                inspectorVersion: MediaCapabilityInspector.version - 1
+            )
+        )
+        XCTAssertNil(
+            MediaCapabilityDecision.restore(
+                status: "unknown",
+                reason: nil,
+                inspectorVersion: MediaCapabilityInspector.version
+            )
         )
     }
 
@@ -150,38 +261,9 @@ final class MediaCapabilityInspectorTests: XCTestCase {
         )
     }
 
-    private func createSRGBJPEG(at url: URL) throws {
-        let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
-        let context = try XCTUnwrap(
-            CGContext(
-                data: nil,
-                width: 2,
-                height: 2,
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: colorSpace,
-                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-            )
-        )
-        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
-        let destination = try XCTUnwrap(
-            CGImageDestinationCreateWithURL(
-                url as CFURL,
-                UTType.jpeg.identifier as CFString,
-                1,
-                nil
-            )
-        )
-        let properties: [String: Any] = [
-            kCGImagePropertyExifDictionary as String: [
-                kCGImagePropertyExifColorSpace as String: 1
-            ]
-        ]
-        CGImageDestinationAddImage(destination, try XCTUnwrap(context.makeImage()), properties as CFDictionary)
-        XCTAssertTrue(CGImageDestinationFinalize(destination))
-    }
+}
 
+private extension MediaCapabilityInspectorTests {
     private func imageCapabilities(
         frameCount: Int = 1,
         hasAlpha: Bool? = false,

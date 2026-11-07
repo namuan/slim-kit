@@ -25,10 +25,63 @@ struct VideoSourceCapabilities: Equatable, Sendable {
     let logTransferFunction: String?
 }
 
+struct MediaCapabilityCacheIdentity: Equatable, Sendable {
+    let sourceModificationDate: Date
+    let resourceSelectionBasis: String
+    let inspectorVersion: Int
+
+    func matches(
+        sourceModificationDate: Date?,
+        resourceSelectionBasis: String,
+        inspectorVersion: Int
+    ) -> Bool {
+        self.sourceModificationDate == sourceModificationDate
+            && self.resourceSelectionBasis == resourceSelectionBasis
+            && self.inspectorVersion == inspectorVersion
+            && !resourceSelectionBasis.isEmpty
+    }
+}
+
 enum MediaCapabilityDecision: Equatable, Sendable {
     case supported
     case unsupported(String)
     case uncertain(String)
+
+    var persistenceStatus: String {
+        switch self {
+        case .supported:
+            "supported"
+        case .unsupported:
+            "unsupported"
+        case .uncertain:
+            "uncertain"
+        }
+    }
+
+    var persistenceReason: String? {
+        switch self {
+        case .supported:
+            nil
+        case let .unsupported(reason), let .uncertain(reason):
+            reason
+        }
+    }
+
+    static func restore(status: String?, reason: String?, inspectorVersion: Int?) -> Self? {
+        guard inspectorVersion == MediaCapabilityInspector.version, let status else { return nil }
+        switch status {
+        case "supported":
+            return .supported
+        case "unsupported":
+            guard let reason else { return nil }
+            return .unsupported(reason)
+        case "uncertain":
+            guard let reason else { return nil }
+            return .uncertain(reason)
+        default:
+            return nil
+        }
+    }
 
     var logLabel: String {
         switch self {
@@ -54,6 +107,8 @@ private enum MediaCapabilityInspectionFailure: Error {
 }
 
 enum MediaCapabilityInspector {
+    static let version = 1
+
     static func inspectImage(at url: URL) -> MediaCapabilityDecision {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
