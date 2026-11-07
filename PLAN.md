@@ -2,7 +2,7 @@
 
 ## Current state
 
-The repository currently contains `SPEC.md` only. This plan turns its requirements into staged implementation milestones, with safety and technical validation ahead of destructive workflows.
+The repository contains the native macOS app scaffold, Photos browser, conservative resource classifier, verified-size domain and cache, rolling file logs, and command-line build/test targets. Compression, import verification, and deletion are not implemented. This plan stages the remaining work with safety and technical validation ahead of destructive workflows.
 
 ## Guiding constraints
 
@@ -17,7 +17,7 @@ The repository currently contains `SPEC.md` only. This plan turns its requiremen
 ### 0. Technical validation and project setup
 
 - [x] Confirm available macOS/Xcode/Swift toolchain and create the native macOS app project.
-- [ ] Validate PhotoKit authorization behavior, resource enumeration/export, import verification, and deletion APIs for the deployment target. Authorization, fetching, and thumbnail APIs compile; export/import/deletion remain unvalidated.
+- [ ] Validate PhotoKit authorization behavior, resource enumeration/export, import verification, and deletion APIs for the deployment target. Authorization, fetching, thumbnail, and selected-resource export APIs compile; live resource export, import, and deletion remain unvalidated.
 - [ ] Confirm App Sandbox and Photos permission configuration for the intended distribution method. Initial sandbox and Photos entitlement are configured; distribution-specific validation remains.
 - [ ] Record API limitations and adjust implementation details without weakening the safety requirements.
 - [x] Establish app target, build settings, and a SwiftUI browser shell; launch/runtime behavior remains to be smoke-tested.
@@ -105,10 +105,11 @@ The repository currently contains `SPEC.md` only. This plan turns its requiremen
 
 ## Progress
 
-- **Foundation/browser slice — in progress:** Added an XcodeGen macOS app target, Photos read/write authorization flow, PhotoKit asset fetch and change observation, lazy grid thumbnails, type filters, multi-selection, persistent Keep/restore state, and explicit unknown size labels. Limited access is labeled as limited.
-- **Domain safety slice — in progress:** Added verified-versus-estimated size states, preset and durable phase identifiers, savings assessment, deletion precondition gate, and conservative resource/subtype eligibility classification surfaced in the browser. Five XCTest cases cover unverified sizes, minimum savings, ambiguous media, source changes, and explicit approval. The gate is not connected to a Photos mutation workflow.
-- **Build/test evidence:** `xcodegen generate` succeeded. The macOS app build succeeded. `xcodebuild ... test` succeeded with 5 tests and 0 failures. `plutil -lint Sources/SlimKit/SlimKit.entitlements` passed. `make run` built and opened the app without opening the Xcode IDE; the app process was observed running and its code signature verified. These checks verify compilation, launch, and pure domain rules, not live Photos authorization or distribution signing.
-- **Not implemented:** Exact resource-size export, eligibility inspection, compression, import verification, Photos deletion, restart recovery, and integration tests.
+- **Foundation/browser slice — in progress:** Added an XcodeGen macOS app target, Photos read/write authorization flow and foreground recheck, observed/debounced library refresh, batched asset enumeration, lazy cancellable thumbnails, photo/video preview, filters, multi-selection, persistent Keep/restore state, and explicit unknown size labels. Limited access is labeled as limited.
+- **Resource-size slice — in progress:** Added a user-confirmed selected-item export, fail-closed single-resource/subtype selection, streamed writes to temporary files, exact file-size versus streamed-byte verification, source re-fetch/modification-state check, cancellation, cleanup, and persistent verified-size records keyed by modification date and resource-selection basis. One user-confirmed iCloud video export completed and verified 2,332,638 bytes. Items without a modification date are conservatively unavailable. Full HDR/color/depth and video-track capability inspection is not implemented.
+- **Domain safety slice — in progress:** Added verified-versus-estimated size states, preset and durable phase identifiers, savings assessment, deletion precondition gate, and conservative resource/subtype eligibility classification. Nine XCTest cases cover size math, eligibility, cancellation, source/cache validity, and deletion gates. The deletion gate is not connected to a Photos mutation workflow.
+- **Build/test evidence:** `make test` passed with 9 tests. `make run` built and opened the app; `codesign --verify --deep --strict` passed. These validate compilation and launch, not live export, preview behavior, Photos authorization changes, or distribution signing.
+- **Not implemented:** Full source capability inspection, repeatable Photos export integration tests, compression, import verification, Photos deletion, restart recovery, and dedicated test-library coverage. A crash after the live video preview was traced to the SwiftUI AVKit `VideoPlayer` path; it has been replaced with AppKit `AVPlayerView` and needs a live retest.
 
 ## Investigation update
 
@@ -117,6 +118,13 @@ The repository currently contains `SPEC.md` only. This plan turns its requiremen
 - Added file and unified logging for launch, authorization, scan/query/enumeration timing and progress, library change notifications, thumbnail requests/errors, and Keep actions. Rolling files are stored under `~/Library/Logs/SlimKit/` (`SlimKit.log` plus five 1 MiB rotations).
 - Current instrumented run: 23,033 assets fetched; PhotoKit fetch query rounded to 0 seconds; enumeration completed in about 1 second. Four visible thumbnail requests logged PhotoKit error 3164; those requests remain placeholders and did not prevent the scan from completing.
 - The requested log path is outside the app sandbox container. A narrowly scoped home-relative sandbox exception grants writes only to `/Library/Logs/SlimKit/`.
+
+## Next implementation phase
+
+1. Re-authorize the rebuilt app, then retest photo/video previews and verify the native AVPlayerView replacement avoids the reported crash. Earlier live photo previews succeeded; video preview construction crashed after delivery.
+2. Extend capability inspection beyond subtype/resource count, especially for HDR, wide gamut, depth/auxiliary image data, and video tracks. Treat uninspected media as not eligible for compression.
+3. Repeat selected-resource tests against local and iCloud-only assets, including cancellation, failures, temporary cleanup, and cache invalidation. One iCloud video export completed; repeatable integration coverage remains absent. The exporter fails closed when the source modification date is unavailable.
+4. Do not start compression until capability inspection and size-discovery exit criteria pass. Keep Photos import, replacement verification, and deletion out of this phase.
 
 ## Initial implementation order
 

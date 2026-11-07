@@ -12,6 +12,7 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
     private(set) var totalAssetCount = 0
     private(set) var errorMessage: String?
     private var scanTask: Task<Void, Never>?
+    private var libraryChangeTask: Task<Void, Never>?
     private var scanID = UUID()
 
     override init() {
@@ -50,7 +51,14 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
         refreshAssets()
     }
 
+    func updateEligibility(_ eligibility: MediaEligibility, for identifier: String) {
+        guard let index = assets.firstIndex(where: { $0.id == identifier }) else { return }
+        assets[index].eligibility = eligibility
+    }
+
     func refreshAssets() {
+        libraryChangeTask?.cancel()
+        libraryChangeTask = nil
         accessState = PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
         scanTask?.cancel()
         scanTask = nil
@@ -63,89 +71,126 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
             AppLogger.shared.warning("PhotosScan", "Skipped scan; authorization=\(accessState.logLabel)")
             return
         }
-
-        let currentScanID = scanID
         isLoading = true
         errorMessage = nil
-        AppLogger.shared.info("PhotosScan", "Started; sorting=creationDate descending; scanID=\(currentScanID.uuidString)")
+        AppLogger.shared.info("PhotosScan", "Started; sorting=creationDate descending; scanID=\(scanID.uuidString)")
+        startScan(scanID: scanID)
+    }
+
+    private func startScan(scanID: UUID) {
         let model = self
-        scanTask = Task.detached(priority: .userInitiated) { [model] in
-            let queryStart = ContinuousClock.now
-            let options = PHFetchOptions()
-            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-            let result = PHAsset.fetchAssets(with: options)
-            let total = result.count
-            let queryDuration = queryStart.duration(to: .now)
-            AppLogger.shared.info(
-                "PhotosScan",
-                "Fetch query completed; assets=\(total); duration=\(queryDuration.formatted())"
-            )
-            await MainActor.run {
-                guard model.scanID == currentScanID else { return }
-                model.totalAssetCount = total
-            }
-
-            var batch: [MediaAsset] = []
-            batch.reserveCapacity(1_000)
-            var processed = 0
-            var photos = 0
-            var videos = 0
-            let enumerationStart = ContinuousClock.now
-            for index in 0..<result.count {
-                guard !Task.isCancelled else { break }
-                let asset = result.object(at: index)
-                guard asset.mediaType == .image || asset.mediaType == .video else { continue }
-                let mediaAsset = MediaAsset(asset: asset)
-                batch.append(mediaAsset)
-                processed += 1
-                if mediaAsset.kind == .photo {
-                    photos += 1
-                } else {
-                    videos += 1
-                }
-                if batch.count == 1_000 {
-                    let nextBatch = batch
-                    batch.removeAll(keepingCapacity: true)
-                    let completedCount = processed
-                    await MainActor.run {
-                        guard model.scanID == currentScanID else { return }
-                        model.assets.append(contentsOf: nextBatch)
-                        model.scannedAssetCount = completedCount
-                    }
-                }
-                if processed > 0, processed.isMultiple(of: 5_000) {
-                    AppLogger.shared.info(
-                        "PhotosScan",
-                        "Enumeration progress; processed=\(processed); total=\(total); photos=\(photos); videos=\(videos)"
-                    )
-                }
-            }
-
-            guard !Task.isCancelled else {
-                AppLogger.shared.info("PhotosScan", "Cancelled; processed=\(processed); total=\(total)")
-                return
-            }
-            let finalBatch = batch
-            let enumerationDuration = enumerationStart.duration(to: .now)
-            let finalProcessedCount = processed
-            await MainActor.run {
-                guard model.scanID == currentScanID else { return }
-                model.assets.append(contentsOf: finalBatch)
-                model.scannedAssetCount = finalProcessedCount
-                model.isLoading = false
-                model.scanTask = nil
-            }
-            AppLogger.shared.info(
-                "PhotosScan",
-                "Completed; processed=\(processed); photos=\(photos); videos=\(videos); duration=\(enumerationDuration.formatted())"
-            )
+        scanTask = Task.detached(priority: .userInitiated) {
+            await Self.scan(scanID: scanID, model: model)
         }
+    }
+
+    nonisolated private static func scan(scanID: UUID, model: PhotosLibraryModel) async {
+        let queryStart = ContinuousClock.now
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        let result = PHAsset.fetchAssets(with: options)
+        let queryDuration = queryStart.duration(to: .now)
+        AppLogger.shared.info(
+            "PhotosScan",
+            "Fetch query completed; assets=\(result.count); duration=\(queryDuration.formatted())"
+        )
+        await model.setTotalAssetCount(result.count, scanID: scanID)
+        let enumerationStart = ContinuousClock.now
+        let counts = await enumerate(result, scanID: scanID, model: model)
+        guard !Task.isCancelled else {
+            AppLogger.shared.info("PhotosScan", "Cancelled; processed=\(counts.processed); total=\(result.count)")
+            return
+        }
+        let duration = enumerationStart.duration(to: .now)
+        await model.finishScan(scanID: scanID, processedCount: counts.processed)
+        AppLogger.shared.info(
+            "PhotosScan",
+            "Completed; processed=\(counts.processed); photos=\(counts.photos); videos=\(counts.videos); " +
+                "duration=\(duration.formatted())"
+        )
+    }
+
+    nonisolated private static func enumerate(
+        _ result: PHFetchResult<PHAsset>,
+        scanID: UUID,
+        model: PhotosLibraryModel
+    ) async -> AssetScanCounts {
+        var counts = AssetScanCounts()
+        var batch: [MediaAsset] = []
+        batch.reserveCapacity(1_000)
+        for index in 0..<result.count {
+            guard !Task.isCancelled else { break }
+            let asset = result.object(at: index)
+            guard asset.mediaType == .image || asset.mediaType == .video else { continue }
+            let mediaAsset = MediaAsset(asset: asset)
+            batch.append(mediaAsset)
+            counts.include(mediaAsset.kind)
+            if batch.count == 1_000 {
+                await model.appendBatch(batch, processedCount: counts.processed, scanID: scanID)
+                batch.removeAll(keepingCapacity: true)
+            }
+            if counts.processed > 0, counts.processed.isMultiple(of: 5_000) {
+                AppLogger.shared.info(
+                    "PhotosScan",
+                    "Enumeration progress; processed=\(counts.processed); total=\(result.count); " +
+                        "photos=\(counts.photos); videos=\(counts.videos)"
+                )
+            }
+        }
+        if !Task.isCancelled, !batch.isEmpty {
+            await model.appendBatch(batch, processedCount: counts.processed, scanID: scanID)
+        }
+        return counts
+    }
+
+    private func setTotalAssetCount(_ count: Int, scanID: UUID) {
+        guard self.scanID == scanID else { return }
+        totalAssetCount = count
+    }
+
+    private func appendBatch(_ batch: [MediaAsset], processedCount: Int, scanID: UUID) {
+        guard self.scanID == scanID else { return }
+        assets.append(contentsOf: batch)
+        scannedAssetCount = processedCount
+    }
+
+    private func finishScan(scanID: UUID, processedCount: Int) {
+        guard self.scanID == scanID else { return }
+        scannedAssetCount = processedCount
+        isLoading = false
+        scanTask = nil
     }
 
     nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
         AppLogger.shared.info("Photos", "Library change notification received")
         Task { @MainActor [weak self] in
-            self?.refreshAssets()
+            self?.scheduleLibraryRefresh()
+        }
+    }
+
+    private func scheduleLibraryRefresh() {
+        libraryChangeTask?.cancel()
+        libraryChangeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled, let self else { return }
+            libraryChangeTask = nil
+            AppLogger.shared.info("PhotosScan", "Debounced library change; refreshing assets")
+            refreshAssets()
+        }
+    }
+}
+
+private struct AssetScanCounts {
+    private(set) var processed = 0
+    private(set) var photos = 0
+    private(set) var videos = 0
+
+    mutating func include(_ kind: MediaAsset.Kind) {
+        processed += 1
+        if kind == .photo {
+            photos += 1
+        } else {
+            videos += 1
         }
     }
 }

@@ -10,16 +10,18 @@ struct MediaAsset: Identifiable, Hashable, Sendable {
     let id: String
     let kind: Kind
     let creationDate: Date?
+    let modificationDate: Date?
     let pixelWidth: Int
     let pixelHeight: Int
     let duration: TimeInterval?
     let isFavorite: Bool
-    let eligibility: MediaEligibility
+    var eligibility: MediaEligibility
 
     init(asset: PHAsset) {
         id = asset.localIdentifier
         kind = asset.mediaType == .video ? .video : .photo
         creationDate = asset.creationDate
+        modificationDate = asset.modificationDate
         pixelWidth = asset.pixelWidth
         pixelHeight = asset.pixelHeight
         duration = asset.mediaType == .video ? asset.duration : nil

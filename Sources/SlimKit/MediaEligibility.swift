@@ -18,6 +18,7 @@ enum MediaEligibility: Equatable, Hashable, Sendable {
     case inspectImageSource
     case inspectVideoSource
     case unsupported(String)
+    case unavailable(String)
 
     var isUnsupported: Bool {
         if case .unsupported = self { return true }

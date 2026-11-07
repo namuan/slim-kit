@@ -11,6 +11,6 @@ struct SlimKitApp: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: ReviewRecord.self)
+        .modelContainer(for: [ReviewRecord.self, VerifiedSizeRecord.self])
     }
 }
