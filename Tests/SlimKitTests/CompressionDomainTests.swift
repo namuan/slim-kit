@@ -157,6 +157,41 @@ final class CompressionDomainTests: XCTestCase {
         }
     }
 
+    func testResourceExportCancellationStopsWritingPartialTransfer() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: nil))
+        guard let fileHandle = try? FileHandle(forWritingTo: url) else {
+            XCTFail("Could not create temporary test file")
+            return
+        }
+        defer {
+            try? fileHandle.close()
+            try? FileManager.default.removeItem(at: url)
+        }
+        let recorder = RequestCancellationRecorder()
+        let operation = ResourceExportOperation(fileHandle: fileHandle) {
+            recorder.record($0)
+        }
+
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                operation.setContinuation(continuation)
+                operation.install(requestID: 23)
+                operation.receive(Data([1, 2, 3]))
+                operation.cancel()
+                operation.receive(Data([4, 5]))
+            }
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            XCTAssertEqual(recorder.requestIDs, [23])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertEqual((attributes[.size] as? NSNumber)?.intValue, 3)
+    }
+
     func testVerifiedSizeCacheRequiresMatchingSourceAndResourceBasis() {
         let modifiedAt = Date(timeIntervalSince1970: 1_000)
         let size = VerifiedResourceSize(

@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var sizeProgressMessage: String?
     @State private var sizeStatusMessage: String?
     @State private var showingSizeExportConfirmation = false
+    @State private var capabilityCacheLogger = MediaCapabilityCacheLogger()
     @State private var columnCount = 5
 
     private var keptIDs: Set<String> {
@@ -51,6 +52,12 @@ struct ContentView: View {
             libraryContent
         }
         .frame(minWidth: 850, minHeight: 560)
+        .onChange(of: sizeRecords.count) { _, _ in
+            capabilityCacheLogger.recordRestorations(for: visibleAssets, records: sizeRecordsByID)
+        }
+        .onChange(of: library.assets.count) { _, _ in
+            capabilityCacheLogger.recordRestorations(for: visibleAssets, records: sizeRecordsByID)
+        }
         .onChange(of: scenePhase) { _, phase in
             AppLogger.shared.info("Application", "Scene phase changed to \(phase)")
             if phase == .active {
@@ -83,7 +90,12 @@ struct ContentView: View {
             if library.accessState.canRead {
                 mediaBrowser
             } else {
-                authorizationView
+                PhotosAuthorizationView(
+                    accessState: library.accessState,
+                    errorMessage: library.errorMessage,
+                    onConnect: library.connect,
+                    onRefresh: library.refreshAssets
+                )
             }
             if !selectedIDs.isEmpty {
                 selectionBar
@@ -164,8 +176,14 @@ struct ContentView: View {
                     ) {
                         ForEach(visibleAssets) { asset in
                             MediaCard(
-                                asset: assetWithCachedCapability(asset),
-                                sizeLabel: sizeLabel(for: asset),
+                                asset: MediaCapabilityCachePresentation.asset(
+                                    for: asset,
+                                    record: sizeRecordsByID[asset.id]
+                                ),
+                                sizeLabel: MediaSizePresentation.label(
+                                    for: asset,
+                                    record: sizeRecordsByID[asset.id]
+                                ),
                                 isSelected: selectedIDs.contains(asset.id),
                                 isKept: keptIDs.contains(asset.id),
                                 onSelect: { toggleSelection(asset.id) },
@@ -178,46 +196,6 @@ struct ContentView: View {
                 }
             }
         }
-    }
-
-    private var authorizationView: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "photo.stack")
-                .font(.system(size: 42))
-                .foregroundStyle(.secondary)
-            Text(accessTitle)
-                .font(.title2.weight(.semibold))
-            Text(accessDescription)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
-            if let errorMessage = library.errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-            }
-            if library.accessState == .notDetermined {
-                Button("Connect Apple Photos") {
-                    library.connect()
-                }
-                .buttonStyle(.borderedProminent)
-            } else if library.accessState == .denied || library.accessState == .restricted {
-                Button("Open Privacy Settings") {
-                    if let settingsURL = URL(
-                        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos"
-                    ) {
-                        NSWorkspace.shared.open(settingsURL)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-            } else if library.accessState == .limited {
-                Button("Refresh Library") {
-                    library.refreshAssets()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
     }
 
     private var selectionBar: some View {
@@ -252,37 +230,6 @@ struct ContentView: View {
 }
 
 private extension ContentView {
-    var accessTitle: String {
-        switch library.accessState {
-        case .notDetermined: "Connect Apple Photos"
-        case .authorized: "Loading Apple Photos"
-        case .limited: "Limited Photos Access"
-        case .denied: "Photos Access Is Off"
-        case .restricted: "Photos Access Is Restricted"
-        }
-    }
-
-    var accessDescription: String {
-        switch library.accessState {
-        case .notDetermined:
-            "SlimKit scans and compresses media locally. Connect Photos to browse your library."
-        case .authorized:
-            "SlimKit is waiting for access to your library."
-        case .limited:
-            "SlimKit can browse only the items you've made available to this app."
-        case .denied:
-            "Allow SlimKit to access Photos in macOS Privacy & Security settings. No library changes have been made."
-        case .restricted:
-            "This Mac restricts access to Photos. No library changes have been made."
-        }
-    }
-    func sizeLabel(for asset: MediaAsset) -> String {
-        guard let record = sizeRecordsByID[asset.id], record.isValid(for: asset) else {
-            return "Size not calculated"
-        }
-        return "\(ByteCountFormatter.string(fromByteCount: record.byteCount, countStyle: .file)) · verified"
-    }
-
     func calculateSelectedSizes() {
         let selectedAssets = library.assets.filter { selectedIDs.contains($0.id) }
         guard !selectedAssets.isEmpty else { return }
@@ -357,15 +304,6 @@ private extension ContentView {
             modelContext.insert(record)
             recordsByID[asset.id] = record
         }
-    }
-
-    func assetWithCachedCapability(_ asset: MediaAsset) -> MediaAsset {
-        guard asset.eligibility == .pendingInspection,
-              let record = sizeRecordsByID[asset.id],
-              let decision = record.capabilityDecision(for: asset) else { return asset }
-        var displayedAsset = asset
-        displayedAsset.eligibility = MediaEligibilityClassifier.apply(decision)
-        return displayedAsset
     }
 
     func toggleSelection(_ id: String) {

@@ -42,6 +42,23 @@ struct MediaCapabilityCacheIdentity: Equatable, Sendable {
     }
 }
 
+enum MediaCapabilityCacheRestorer {
+    static func decision(
+        eligibility: MediaEligibility,
+        assetID: String,
+        sourceModificationDate: Date?,
+        record: VerifiedSizeRecord?
+    ) -> MediaCapabilityDecision? {
+        guard eligibility == .pendingInspection,
+              let record,
+              record.isValid(assetID: assetID, modificationDate: sourceModificationDate) else { return nil }
+        return record.capabilityDecision(
+            sourceModificationDate: sourceModificationDate,
+            resourceSelectionBasis: record.resourceSelectionBasis
+        )
+    }
+}
+
 enum MediaCapabilityDecision: Equatable, Sendable {
     case supported
     case unsupported(String)

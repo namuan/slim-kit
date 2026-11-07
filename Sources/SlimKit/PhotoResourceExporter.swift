@@ -42,39 +42,32 @@ struct PhotoResourceExporter {
         _ selectedResource: SelectedResource,
         networkAccessAllowed: Bool
     ) async throws -> ExportedResource {
-        let fileManager = FileManager.default
-        let workspace = fileManager.temporaryDirectory
-            .appendingPathComponent("SlimKit-Resource-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: workspace, withIntermediateDirectories: false)
-        defer { try? fileManager.removeItem(at: workspace) }
         let fileExtension = UTType(selectedResource.resource.uniformTypeIdentifier)?.preferredFilenameExtension
         let filename = fileExtension.map { "source-resource.\($0)" } ?? "source-resource"
-        let resourceURL = workspace.appendingPathComponent(filename)
-        guard fileManager.createFile(atPath: resourceURL.path, contents: nil) else {
-            throw ResourceExportError.exportFailed
+        return try await ResourceExportWorkspace.withTemporaryResource(filename: filename) { resourceURL in
+            let fileHandle: FileHandle
+            do {
+                fileHandle = try FileHandle(forWritingTo: resourceURL)
+            } catch {
+                throw ResourceExportError.exportFailed
+            }
+            defer { try? fileHandle.close() }
+            let byteCount = try await transfer(
+                selectedResource.resource,
+                to: fileHandle,
+                at: resourceURL,
+                networkAccessAllowed: networkAccessAllowed
+            )
+            try fileHandle.close()
+            let capabilities: MediaCapabilityDecision
+            switch selectedResource.kind {
+            case .photo:
+                capabilities = MediaCapabilityInspector.inspectImage(at: resourceURL)
+            case .video:
+                capabilities = await MediaCapabilityInspector.inspectVideo(at: resourceURL)
+            }
+            return ExportedResource(byteCount: byteCount, capabilities: capabilities)
         }
-        let fileHandle: FileHandle
-        do {
-            fileHandle = try FileHandle(forWritingTo: resourceURL)
-        } catch {
-            throw ResourceExportError.exportFailed
-        }
-        defer { try? fileHandle.close() }
-        let byteCount = try await transfer(
-            selectedResource.resource,
-            to: fileHandle,
-            at: resourceURL,
-            networkAccessAllowed: networkAccessAllowed
-        )
-        try fileHandle.close()
-        let capabilities: MediaCapabilityDecision
-        switch selectedResource.kind {
-        case .photo:
-            capabilities = MediaCapabilityInspector.inspectImage(at: resourceURL)
-        case .video:
-            capabilities = await MediaCapabilityInspector.inspectVideo(at: resourceURL)
-        }
-        return ExportedResource(byteCount: byteCount, capabilities: capabilities)
     }
 
     private static func transfer(
@@ -170,6 +163,25 @@ struct PhotoResourceExporter {
         }
         let basis = "\(kind.rawValue)|\(resource.type.rawValue)|\(resource.uniformTypeIdentifier)"
         return SelectedResource(resource: resource, kind: kind, basis: basis)
+    }
+}
+
+enum ResourceExportWorkspace {
+    static func withTemporaryResource<Value>(
+        in temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        filename: String,
+        operation: (URL) async throws -> Value
+    ) async throws -> Value {
+        let fileManager = FileManager.default
+        let workspace = temporaryDirectory
+            .appendingPathComponent("SlimKit-Resource-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: workspace, withIntermediateDirectories: false)
+        defer { try? fileManager.removeItem(at: workspace) }
+        let resourceURL = workspace.appendingPathComponent(filename)
+        guard fileManager.createFile(atPath: resourceURL.path, contents: nil) else {
+            throw ResourceExportError.exportFailed
+        }
+        return try await operation(resourceURL)
     }
 }
 

@@ -28,9 +28,13 @@ final class VerifiedSizeRecord {
     }
 
     func isValid(for asset: MediaAsset) -> Bool {
+        isValid(assetID: asset.id, modificationDate: asset.modificationDate)
+    }
+
+    func isValid(assetID: String, modificationDate: Date?) -> Bool {
         byteCount > 0
-            && assetID == asset.id
-            && sourceModificationDate == asset.modificationDate
+            && self.assetID == assetID
+            && sourceModificationDate == modificationDate
             && !resourceSelectionBasis.isEmpty
     }
 
