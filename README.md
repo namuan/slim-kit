@@ -12,4 +12,8 @@ make run
 
 Run tests with `make test`.
 
+## Current scope
+
+SlimKit can browse Photos, preview media, and verify selected resource sizes. If an original is only in iCloud, SlimKit asks before requesting it over the network; previews do not modify the Photos library. Compression, import, and deletion are not implemented.
+
 [License](LICENSE)
