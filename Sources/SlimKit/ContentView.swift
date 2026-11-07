@@ -313,12 +313,13 @@ private extension ContentView {
                 guard !Task.isCancelled else { break }
                 sizeProgressMessage = "Exporting \(index + 1) of \(selectedAssets.count)"
                 do {
-                    let verifiedSize = try await PhotoResourceExporter.measure(
+                    let measurement = try await PhotoResourceExporter.measure(
                         assetIdentifier: asset.id,
                         networkAccessAllowed: true
                     )
                     guard !Task.isCancelled else { break }
-                    storeVerifiedSize(verifiedSize, for: asset, recordsByID: &recordsByID)
+                    storeVerifiedSize(measurement.size, for: asset, recordsByID: &recordsByID)
+                    library.applyCapabilityDecision(measurement.capabilities, for: asset.id)
                     measuredCount += 1
                 } catch is CancellationError {
                     break

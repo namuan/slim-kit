@@ -68,7 +68,7 @@ struct MediaCard: View {
                 .foregroundStyle(sizeLabel.contains("verified") ? .secondary : .tertiary)
             Text(eligibilitySummary)
                 .font(.caption2)
-                .foregroundStyle(asset.eligibility.isUnsupported ? .orange : .secondary)
+                .foregroundStyle(asset.eligibility.requiresReview ? .orange : .secondary)
                 .lineLimit(2)
         }
         .accessibilityElement(children: .combine)
@@ -100,8 +100,12 @@ struct MediaCard: View {
             "Eligibility not inspected"
         case .inspectImageSource, .inspectVideoSource:
             "Needs source inspection"
+        case .capabilitiesInspected:
+            "Capabilities inspected · standard source"
         case let .unsupported(reason):
             "Unsupported · \(reason)"
+        case let .uncertain(reason):
+            "Review needed · \(reason)"
         case let .unavailable(reason):
             "Unavailable · \(reason)"
         }

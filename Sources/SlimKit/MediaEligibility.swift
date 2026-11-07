@@ -17,16 +17,38 @@ enum MediaEligibility: Equatable, Hashable, Sendable {
     case pendingInspection
     case inspectImageSource
     case inspectVideoSource
+    case capabilitiesInspected
     case unsupported(String)
+    case uncertain(String)
     case unavailable(String)
 
     var isUnsupported: Bool {
         if case .unsupported = self { return true }
         return false
     }
+
+    var requiresReview: Bool {
+        switch self {
+        case .unsupported, .uncertain:
+            true
+        default:
+            false
+        }
+    }
 }
 
 enum MediaEligibilityClassifier {
+    static func apply(_ decision: MediaCapabilityDecision) -> MediaEligibility {
+        switch decision {
+        case .supported:
+            .capabilitiesInspected
+        case let .unsupported(reason):
+            .unsupported(reason)
+        case let .uncertain(reason):
+            .uncertain(reason)
+        }
+    }
+
     static func classify(
         kind: MediaAsset.Kind,
         mediaSubtypeRawValue: UInt,

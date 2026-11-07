@@ -15,6 +15,11 @@ struct VerifiedResourceSize: Equatable, Sendable {
     }
 }
 
+struct VerifiedResourceMeasurement: Equatable, Sendable {
+    let size: VerifiedResourceSize
+    let capabilities: MediaCapabilityDecision
+}
+
 struct ResourceByteCounter: Equatable, Sendable {
     private(set) var streamedBytes: Int64 = 0
 

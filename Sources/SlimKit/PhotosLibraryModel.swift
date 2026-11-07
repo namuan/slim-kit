@@ -56,6 +56,10 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
         assets[index].eligibility = eligibility
     }
 
+    func applyCapabilityDecision(_ decision: MediaCapabilityDecision, for identifier: String) {
+        updateEligibility(MediaEligibilityClassifier.apply(decision), for: identifier)
+    }
+
     func refreshAssets() {
         libraryChangeTask?.cancel()
         libraryChangeTask = nil

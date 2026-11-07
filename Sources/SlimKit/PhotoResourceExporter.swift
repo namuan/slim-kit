@@ -1,11 +1,12 @@
 import Foundation
 import Photos
+import UniformTypeIdentifiers
 
 struct PhotoResourceExporter {
     static func measure(
         assetIdentifier: String,
         networkAccessAllowed: Bool = false
-    ) async throws -> VerifiedResourceSize {
+    ) async throws -> VerifiedResourceMeasurement {
         guard canReadPhotos else { throw ResourceExportError.accessUnavailable }
         guard let asset = fetchAsset(assetIdentifier) else { throw ResourceExportError.assetUnavailable }
         let selectedResource = try selectResource(for: asset)
@@ -13,7 +14,7 @@ struct PhotoResourceExporter {
             throw ResourceExportError.sourceStateUnavailable
         }
         try Task.checkCancellation()
-        let byteCount = try await exportResource(selectedResource, networkAccessAllowed: networkAccessAllowed)
+        let exportedResource = try await exportResource(selectedResource, networkAccessAllowed: networkAccessAllowed)
         try Task.checkCancellation()
         try verifySource(
             assetIdentifier: assetIdentifier,
@@ -22,28 +23,33 @@ struct PhotoResourceExporter {
         )
         AppLogger.shared.info(
             "ResourceExport",
-            "Verified selected resource; kind=\(selectedResource.kind); bytes=\(byteCount); " +
-                "networkAccess=\(networkAccessAllowed)"
+            "Verified selected resource; kind=\(selectedResource.kind); bytes=\(exportedResource.byteCount); " +
+                "networkAccess=\(networkAccessAllowed); capabilities=\(exportedResource.capabilities.logLabel)"
         )
-        return VerifiedResourceSize(
-            assetID: assetIdentifier,
-            byteCount: byteCount,
-            sourceModificationDate: sourceModificationDate,
-            resourceSelectionBasis: selectedResource.basis,
-            measuredAt: .now
+        return VerifiedResourceMeasurement(
+            size: VerifiedResourceSize(
+                assetID: assetIdentifier,
+                byteCount: exportedResource.byteCount,
+                sourceModificationDate: sourceModificationDate,
+                resourceSelectionBasis: selectedResource.basis,
+                measuredAt: .now
+            ),
+            capabilities: exportedResource.capabilities
         )
     }
 
     private static func exportResource(
         _ selectedResource: SelectedResource,
         networkAccessAllowed: Bool
-    ) async throws -> Int64 {
+    ) async throws -> ExportedResource {
         let fileManager = FileManager.default
         let workspace = fileManager.temporaryDirectory
             .appendingPathComponent("SlimKit-Resource-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: workspace, withIntermediateDirectories: false)
         defer { try? fileManager.removeItem(at: workspace) }
-        let resourceURL = workspace.appendingPathComponent("source-resource")
+        let fileExtension = UTType(selectedResource.resource.uniformTypeIdentifier)?.preferredFilenameExtension
+        let filename = fileExtension.map { "source-resource.\($0)" } ?? "source-resource"
+        let resourceURL = workspace.appendingPathComponent(filename)
         guard fileManager.createFile(atPath: resourceURL.path, contents: nil) else {
             throw ResourceExportError.exportFailed
         }
@@ -54,14 +60,21 @@ struct PhotoResourceExporter {
             throw ResourceExportError.exportFailed
         }
         defer { try? fileHandle.close() }
-        let verifiedByteCount = try await transfer(
+        let byteCount = try await transfer(
             selectedResource.resource,
             to: fileHandle,
             at: resourceURL,
             networkAccessAllowed: networkAccessAllowed
         )
         try fileHandle.close()
-        return verifiedByteCount
+        let capabilities: MediaCapabilityDecision
+        switch selectedResource.kind {
+        case .photo:
+            capabilities = MediaCapabilityInspector.inspectImage(at: resourceURL)
+        case .video:
+            capabilities = await MediaCapabilityInspector.inspectVideo(at: resourceURL)
+        }
+        return ExportedResource(byteCount: byteCount, capabilities: capabilities)
     }
 
     private static func transfer(
@@ -144,6 +157,10 @@ struct PhotoResourceExporter {
             kind = .video
         case .pendingInspection:
             throw ResourceExportError.unsupported("The Photos item has not been classified.")
+        case .capabilitiesInspected:
+            throw ResourceExportError.unsupported("The source capabilities have already been inspected.")
+        case let .uncertain(reason):
+            throw ResourceExportError.unsupported(reason)
         case let .unsupported(reason), let .unavailable(reason):
             throw ResourceExportError.unsupported(reason)
         }
@@ -154,6 +171,11 @@ struct PhotoResourceExporter {
         let basis = "\(kind.rawValue)|\(resource.type.rawValue)|\(resource.uniformTypeIdentifier)"
         return SelectedResource(resource: resource, kind: kind, basis: basis)
     }
+}
+
+private struct ExportedResource {
+    let byteCount: Int64
+    let capabilities: MediaCapabilityDecision
 }
 
 private struct SelectedResource {
