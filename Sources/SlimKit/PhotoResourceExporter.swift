@@ -74,21 +74,31 @@ struct PhotoResourceExporter {
         at resourceURL: URL,
         networkAccessAllowed: Bool
     ) async throws -> Int64 {
-        let manager = PHAssetResourceManager.default()
+        try await transfer(
+            using: PhotoKitResourceDataRequester(resource: resource),
+            to: fileHandle,
+            at: resourceURL,
+            networkAccessAllowed: networkAccessAllowed
+        )
+    }
+
+    static func transfer(
+        using requester: any ResourceDataRequester,
+        to fileHandle: FileHandle,
+        at resourceURL: URL,
+        networkAccessAllowed: Bool
+    ) async throws -> Int64 {
         let operation = ResourceExportOperation(fileHandle: fileHandle) {
-            manager.cancelDataRequest($0)
+            requester.cancelDataRequest($0)
         }
-        let options = PHAssetResourceRequestOptions()
-        options.isNetworkAccessAllowed = networkAccessAllowed
         let progressLogger = ResourceExportProgressLogger()
-        options.progressHandler = { progressLogger.record($0) }
         do {
             try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     operation.setContinuation(continuation)
-                    let requestID = manager.requestData(
-                        for: resource,
-                        options: options,
+                    let requestID = requester.requestData(
+                        isNetworkAccessAllowed: networkAccessAllowed,
+                        progressHandler: { progressLogger.record($0) },
                         dataReceivedHandler: { operation.receive($0) },
                         completionHandler: { operation.finish(error: $0) }
                     )
