@@ -159,7 +159,7 @@ final class PhotoKitResourceSourceTests: XCTestCase {
                 kind: .photo,
                 uniformTypeIdentifier: uti
             ),
-            transfer: { fileHandle, resourceURL, _ in
+            transfer: { fileHandle, resourceURL, _, _ in
                 transfers.record()
                 try fileHandle.write(contentsOf: data)
                 if let transferError { throw transferError }

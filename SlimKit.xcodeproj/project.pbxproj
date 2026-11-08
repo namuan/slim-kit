@@ -8,10 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		04AC125651423AAD6652B97F /* PhotosAuthorizationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD739F980F50AF6EAC0E048 /* PhotosAuthorizationView.swift */; };
+		0A7191BF8DAB548F3AF57360 /* CompressionJobQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC5C91A942A656B2F3CF1D4 /* CompressionJobQueue.swift */; };
 		15A75009FA9616B198D3B545 /* MediaCapabilityPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59C073CCE4D63B7E3234D717 /* MediaCapabilityPresentationTests.swift */; };
 		1AC9148BDD8F901FD9360496 /* PhotoResourceExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35F66A7A7D71738A681A0DA /* PhotoResourceExporterTests.swift */; };
 		1D7952CB45B76E6233D985D9 /* PhotoKitResourceSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F8A42E429FB49D09F6FBAC7 /* PhotoKitResourceSourceTests.swift */; };
 		1E03B7063977664A427CDF22 /* VideoCompressionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3ADB0B330E7D44BB06BD8D /* VideoCompressionEngineTests.swift */; };
+		201887F41B5BEA2D9A2AFCE2 /* CompressionJobQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113C7F6597FF602D809F67C8 /* CompressionJobQueueTests.swift */; };
 		2339E304756C49F998DA1C34 /* CompressionWorkspaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE0CEF631C4122489D2B70E /* CompressionWorkspaceTests.swift */; };
 		2FC0AFC92C1F7C59E39E26FE /* MediaCapabilityCachePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D58FAC9C79E68D74EB8A68 /* MediaCapabilityCachePresentation.swift */; };
 		3559B12B2B2DD10CDCE6214D /* MediaCapabilitySourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EEFDB87F11E039B2EFC6CA3 /* MediaCapabilitySourceTests.swift */; };
@@ -62,6 +64,7 @@
 
 /* Begin PBXFileReference section */
 		0D84D8E727EAB3C2184D6BD9 /* VideoCompressionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoCompressionEngine.swift; sourceTree = "<group>"; };
+		113C7F6597FF602D809F67C8 /* CompressionJobQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionJobQueueTests.swift; sourceTree = "<group>"; };
 		18F612F89A15EA79E337E82F /* MediaCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCard.swift; sourceTree = "<group>"; };
 		1D3C16C9E16101F428F9CBAC /* CompressionWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionWorkspace.swift; sourceTree = "<group>"; };
 		2C8C4AF7164BF7056E067356 /* PhotoKitResourceSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoKitResourceSource.swift; sourceTree = "<group>"; };
@@ -97,6 +100,7 @@
 		C0D58FAC9C79E68D74EB8A68 /* MediaCapabilityCachePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCapabilityCachePresentation.swift; sourceTree = "<group>"; };
 		CBB38C55D4F969D4CBDEFC56 /* PhotoResourceSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoResourceSelectionTests.swift; sourceTree = "<group>"; };
 		CDD029DA2DDBC71DDF4A2C23 /* MediaAsset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaAsset.swift; sourceTree = "<group>"; };
+		CEC5C91A942A656B2F3CF1D4 /* CompressionJobQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionJobQueue.swift; sourceTree = "<group>"; };
 		CF72780036D17E26CC4E2972 /* MediaCapabilityInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCapabilityInspector.swift; sourceTree = "<group>"; };
 		D374DD047D2047FCAC271A41 /* PhotoResourceMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoResourceMeasurementTests.swift; sourceTree = "<group>"; };
 		D5D21FDED24DB34F6867958C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -121,6 +125,7 @@
 			isa = PBXGroup;
 			children = (
 				BFB58DFBDD8276397F869E3A /* CompressionDomainTests.swift */,
+				113C7F6597FF602D809F67C8 /* CompressionJobQueueTests.swift */,
 				9FE0CEF631C4122489D2B70E /* CompressionWorkspaceTests.swift */,
 				7046744A4D74783646C672AA /* ImageCompressionEngineTests.swift */,
 				97453BB314AB81B229D9EC88 /* MediaAssetSortingTests.swift */,
@@ -146,6 +151,7 @@
 			children = (
 				946D23D0CEEBE17AB81E3501 /* AppLogger.swift */,
 				EE5FF39710CB330CB8366F6A /* CompressionDomain.swift */,
+				CEC5C91A942A656B2F3CF1D4 /* CompressionJobQueue.swift */,
 				1D3C16C9E16101F428F9CBAC /* CompressionWorkspace.swift */,
 				D5D21FDED24DB34F6867958C /* ContentView.swift */,
 				AE1B8AFFC64A006AF3300A3A /* LibraryFilter.swift */,
@@ -257,6 +263,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A9CE49925B618B6B702DF9D6 /* CompressionDomainTests.swift in Sources */,
+				201887F41B5BEA2D9A2AFCE2 /* CompressionJobQueueTests.swift in Sources */,
 				2339E304756C49F998DA1C34 /* CompressionWorkspaceTests.swift in Sources */,
 				C8711DFD64A16A80FA899B1D /* ImageCompressionEngineTests.swift in Sources */,
 				DDE465DBD09B2983CDD82AFE /* MediaAssetSortingTests.swift in Sources */,
@@ -281,6 +288,7 @@
 			files = (
 				3C2F04B5F453D9EC935E6EFE /* AppLogger.swift in Sources */,
 				BA67AA0F7A22F2BD0E759A92 /* CompressionDomain.swift in Sources */,
+				0A7191BF8DAB548F3AF57360 /* CompressionJobQueue.swift in Sources */,
 				6C5F8672E014BF6DE5F9F1D7 /* CompressionWorkspace.swift in Sources */,
 				C13B60F7861ED456F20BE282 /* ContentView.swift in Sources */,
 				FC45AB9FEDA56CD0E28F87FD /* LibraryFilter.swift in Sources */,

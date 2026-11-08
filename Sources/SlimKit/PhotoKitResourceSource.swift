@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct PhotoKitResourceCandidate {
     let selection: PhotoResourceCandidate
-    let transfer: (FileHandle, URL, Bool) async throws -> Int64
+    let transfer: (FileHandle, URL, Bool, ResourceTransferProgress) async throws -> Int64
 }
 
 enum PhotoKitAssetKind {
@@ -141,12 +141,13 @@ struct LivePhotoKitResourceCatalog: PhotoKitResourceCatalog {
                     kind: MediaEligibilityClassifier.resourceKind(resource.type),
                     uniformTypeIdentifier: resource.uniformTypeIdentifier
                 ),
-                transfer: { fileHandle, resourceURL, networkAccessAllowed in
+                transfer: { fileHandle, resourceURL, networkAccessAllowed, progress in
                     try await PhotoResourceExporter.transfer(
                         resource,
                         to: fileHandle,
                         at: resourceURL,
-                        networkAccessAllowed: networkAccessAllowed
+                        networkAccessAllowed: networkAccessAllowed,
+                        progress: { progress.report($0) }
                     )
                 }
             )

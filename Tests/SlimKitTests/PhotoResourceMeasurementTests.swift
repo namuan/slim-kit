@@ -107,7 +107,7 @@ final class PhotoResourceMeasurementTests: XCTestCase {
             kind: .photo,
             basis: "photo|public.jpeg",
             filename: "source-resource.jpg",
-            transfer: { fileHandle, resourceURL, _ in
+            transfer: { fileHandle, resourceURL, _, _ in
                 try fileHandle.write(contentsOf: bytes)
                 if let transferError { throw transferError }
                 var counter = ResourceByteCounter()

@@ -44,6 +44,85 @@ struct CompressionWorkspaceManager {
         return CompressionWorkspaceManager(rootURL: rootURL, diskSpaceProvider: diskSpaceProvider)
     }
 
+    func retainArtifact(
+        _ artifact: CompressedMediaArtifact,
+        from workspace: CompressionWorkspace
+    ) throws -> CompressedMediaArtifact {
+        let sourceURL = artifact.outputURL.standardizedFileURL
+        let workspaceOutputURL = workspace.outputDirectoryURL.standardizedFileURL
+        guard sourceURL.path.hasPrefix(workspaceOutputURL.path + "/"),
+              FileManager.default.fileExists(atPath: sourceURL.path) else {
+            throw CompressionArtifactRetentionError.invalidOutput
+        }
+        let artifactsURL = rootURL.appendingPathComponent("ReadyForImport", isDirectory: true)
+        let artifactDirectoryURL = artifactsURL.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileExtension = sourceURL.pathExtension
+        let retainedURL = artifactDirectoryURL
+            .appendingPathComponent("compressed-output")
+            .appendingPathExtension(fileExtension)
+        let manifestURL = artifactDirectoryURL.appendingPathComponent("artifact.json")
+        do {
+            try FileManager.default.createDirectory(at: artifactsURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: artifactDirectoryURL, withIntermediateDirectories: false)
+            try FileManager.default.moveItem(at: sourceURL, to: retainedURL)
+            let retainedArtifact = CompressedMediaArtifact(
+                assetID: artifact.assetID,
+                preset: artifact.preset,
+                sourceBytes: artifact.sourceBytes,
+                outputBytes: artifact.outputBytes,
+                savedBytes: artifact.savedBytes,
+                savingsFraction: artifact.savingsFraction,
+                outputTypeIdentifier: artifact.outputTypeIdentifier,
+                pixelWidth: artifact.pixelWidth,
+                pixelHeight: artifact.pixelHeight,
+                outputURL: retainedURL
+            )
+            let manifest = try JSONEncoder().encode(retainedArtifact)
+            try manifest.write(to: manifestURL, options: .atomic)
+            guard try fileByteCount(at: retainedURL) == artifact.outputBytes else {
+                throw CompressionArtifactRetentionError.byteCountMismatch
+            }
+            try workspace.cleanup()
+            return retainedArtifact
+        } catch {
+            try? FileManager.default.removeItem(at: artifactDirectoryURL)
+            throw error
+        }
+    }
+
+    func loadRetainedArtifacts() -> [CompressedMediaArtifact] {
+        let artifactsURL = rootURL.appendingPathComponent("ReadyForImport", isDirectory: true)
+        guard let artifactDirectories = try? FileManager.default.contentsOfDirectory(
+            at: artifactsURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return artifactDirectories.compactMap(loadRetainedArtifact(at:))
+    }
+
+    private func loadRetainedArtifact(at directoryURL: URL) -> CompressedMediaArtifact? {
+        let manifestURL = directoryURL.appendingPathComponent("artifact.json")
+        guard let data = try? Data(contentsOf: manifestURL),
+              let artifact = try? JSONDecoder().decode(CompressedMediaArtifact.self, from: data),
+              artifact.outputURL.deletingLastPathComponent().standardizedFileURL == directoryURL.standardizedFileURL,
+              (try? fileByteCount(at: artifact.outputURL)) == artifact.outputBytes else {
+            let message = "Retained artifact manifest or output is invalid at \(directoryURL.lastPathComponent)"
+            AppLogger.shared.warning("CompressionRecovery", message)
+            return nil
+        }
+        return artifact
+    }
+
+    private func fileByteCount(at url: URL) throws -> Int64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let byteCount = (attributes[.size] as? NSNumber)?.int64Value else {
+            throw CompressionArtifactRetentionError.outputSizeUnavailable
+        }
+        return byteCount
+    }
+
     func create(sourceByteCount: Int64) throws -> CompressionWorkspace {
         guard sourceByteCount > 0 else { throw CompressionWorkspaceError.invalidSourceSize }
         let (requiredBytes, overflow) = sourceByteCount.multipliedReportingOverflow(by: 2)
@@ -88,6 +167,14 @@ struct CompressionWorkspace {
         sourceDirectoryURL.appendingPathComponent("source-resource")
     }
 
+    func sourceURL(for filename: String) -> URL {
+        let fileExtension = URL(fileURLWithPath: filename).pathExtension
+        guard !fileExtension.isEmpty else { return sourceURL }
+        return sourceDirectoryURL
+            .appendingPathComponent("source-resource")
+            .appendingPathExtension(fileExtension)
+    }
+
     var outputURL: URL {
         outputDirectoryURL.appendingPathComponent("compressed-output")
     }
@@ -95,6 +182,20 @@ struct CompressionWorkspace {
     func cleanup() throws {
         guard FileManager.default.fileExists(atPath: rootURL.path) else { return }
         try FileManager.default.removeItem(at: rootURL)
+    }
+}
+
+enum CompressionArtifactRetentionError: LocalizedError, Equatable {
+    case invalidOutput
+    case outputSizeUnavailable
+    case byteCountMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidOutput: "The compressed artifact is outside its job workspace."
+        case .outputSizeUnavailable: "The retained compressed artifact size could not be verified."
+        case .byteCountMismatch: "The retained compressed artifact size changed during handoff."
+        }
     }
 }
 

@@ -7,7 +7,8 @@ struct VideoCompressionEngine {
     static func compress(
         input: LocalCompressionInput,
         preset: CompressionPreset,
-        workspace: CompressionWorkspace
+        workspace: CompressionWorkspace,
+        progress: CompressionProgressHandler? = nil
     ) async throws -> CompressionAttempt {
         let preparation = try await VideoCompressionPreparer.prepare(
             input: input,
@@ -18,21 +19,23 @@ struct VideoCompressionEngine {
         case let .skipped(reason):
             return .skipped(reason)
         case let .ready(job):
-            return try await execute(job, input: input, preset: preset)
+            return try await execute(job, input: input, preset: preset, progress: progress)
         }
     }
 
     private static func execute(
         _ job: VideoCompressionJob,
         input: LocalCompressionInput,
-        preset: CompressionPreset
+        preset: CompressionPreset,
+        progress: CompressionProgressHandler?
     ) async throws -> CompressionAttempt {
         var keepOutput = false
         defer {
             if !keepOutput { try? FileManager.default.removeItem(at: job.outputURL) }
         }
         try Task.checkCancellation()
-        try await export(job.session)
+        try await export(job.session, progress: progress)
+        progress?(.validating, nil)
         let output = try await validatedOutput(
             input: input,
             sourceIdentity: job.sourceIdentity,
@@ -40,6 +43,7 @@ struct VideoCompressionEngine {
             outputURL: job.outputURL,
             preset: preset
         )
+        try Task.checkCancellation()
         let savings = SavingsAssessment(
             source: .verified(input.verifiedSize.byteCount),
             outputBytes: output.identity.byteCount,
@@ -141,8 +145,24 @@ struct VideoCompressionEngine {
         )
     }
 
-    fileprivate static func export(_ session: AVAssetExportSession) async throws {
+    fileprivate static func export(
+        _ session: AVAssetExportSession,
+        progress: CompressionProgressHandler?
+    ) async throws {
         let handle = VideoExportSessionHandle(session: session)
+        let progressMonitor = Task {
+            while !Task.isCancelled {
+                if let progress {
+                    progress(.compressing, Double(handle.session.progress))
+                }
+                do {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                } catch {
+                    break
+                }
+            }
+        }
+        defer { progressMonitor.cancel() }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 handle.session.exportAsynchronously {

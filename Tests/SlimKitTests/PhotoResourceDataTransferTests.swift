@@ -11,18 +11,21 @@ final class PhotoResourceDataTransferTests: XCTestCase {
             try? FileManager.default.removeItem(at: url)
         }
         let requester = StubResourceDataRequester(chunks: [Data([1, 2]), Data([3, 4])])
+        let progressRecorder = TransferProgressRecorder()
 
         let byteCount = try await PhotoResourceExporter.transfer(
             using: requester,
             to: fileHandle,
             at: url,
-            networkAccessAllowed: true
+            networkAccessAllowed: true,
+            progress: { progressRecorder.record($0) }
         )
 
         XCTAssertEqual(byteCount, 4)
         XCTAssertEqual(try Data(contentsOf: url), Data([1, 2, 3, 4]))
         XCTAssertEqual(requester.networkAccessAllowed, true)
         XCTAssertEqual(requester.progressValues, [0.5, 1])
+        XCTAssertEqual(progressRecorder.values, [0.5])
         XCTAssertTrue(requester.cancelledRequestIDs.isEmpty)
     }
 
@@ -99,6 +102,23 @@ final class PhotoResourceDataTransferTests: XCTestCase {
             throw ResourceExportError.exportFailed
         }
         return (url, try FileHandle(forWritingTo: url))
+    }
+}
+
+private final class TransferProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValues: [Double] = []
+
+    var values: [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValues
+    }
+
+    func record(_ value: Double) {
+        lock.lock()
+        storedValues.append(value)
+        lock.unlock()
     }
 }
 

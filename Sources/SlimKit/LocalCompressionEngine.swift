@@ -8,7 +8,7 @@ struct LocalCompressionInput {
     let verifySourceIsCurrent: () throws -> Void
 }
 
-struct CompressedMediaArtifact: Equatable, Sendable {
+struct CompressedMediaArtifact: Codable, Equatable, Sendable {
     let assetID: String
     let preset: CompressionPreset
     let sourceBytes: Int64
@@ -62,8 +62,10 @@ enum ImageCompressionEngine {
     static func compress(
         input: LocalCompressionInput,
         preset: CompressionPreset,
-        workspace: CompressionWorkspace
+        workspace: CompressionWorkspace,
+        progress: CompressionProgressHandler? = nil
     ) throws -> CompressionAttempt {
+        try Task.checkCancellation()
         try input.verifySourceIsCurrent()
         guard hasVerifiedInput(input) else { return .skipped(.sourceSizeUnverified) }
         let initialIdentity = try sourceIdentity(at: input.sourceURL)
@@ -89,7 +91,10 @@ enum ImageCompressionEngine {
         defer {
             if !keepOutput { try? FileManager.default.removeItem(at: outputURL) }
         }
+        progress?(.compressing, nil)
         try encode(source, preset: preset, to: outputURL)
+        try Task.checkCancellation()
+        progress?(.validating, nil)
         let output = try validatedOutput(
             input: input,
             initialIdentity: initialIdentity,
@@ -97,6 +102,7 @@ enum ImageCompressionEngine {
             preset: preset,
             outputURL: outputURL
         )
+        try Task.checkCancellation()
         let assessment = SavingsAssessment(
             source: .verified(input.verifiedSize.byteCount),
             outputBytes: output.identity.byteCount,

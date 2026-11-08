@@ -35,6 +35,55 @@ struct PhotoResourceExporter {
         )
     }
 
+    static func exportForCompression(
+        verifiedSize: VerifiedResourceSize,
+        workspace: CompressionWorkspace,
+        networkAccessAllowed: Bool = false,
+        source: any ResourceExportSource = PhotoKitResourceSource(),
+        progressHandler: @escaping @Sendable (Double) -> Void = { _ in }
+    ) async throws -> LocalCompressionInput {
+        guard source.canReadPhotos else { throw ResourceExportError.accessUnavailable }
+        let selectedResource = try source.selectResource(assetIdentifier: verifiedSize.assetID)
+        guard selectedResource.sourceModificationDate == verifiedSize.sourceModificationDate,
+              selectedResource.basis == verifiedSize.resourceSelectionBasis else {
+            throw ResourceExportError.sourceChanged
+        }
+        try selectedResource.verifySource()
+        try Task.checkCancellation()
+        let resourceURL = workspace.sourceURL(for: selectedResource.filename)
+        guard !FileManager.default.fileExists(atPath: resourceURL.path),
+              FileManager.default.createFile(atPath: resourceURL.path, contents: nil) else {
+            throw ResourceExportError.exportFailed
+        }
+        do {
+            let fileHandle = try FileHandle(forWritingTo: resourceURL)
+            defer { try? fileHandle.close() }
+            let byteCount = try await selectedResource.transfer(
+                fileHandle,
+                resourceURL,
+                networkAccessAllowed,
+                ResourceTransferProgress(progressHandler)
+            )
+            try fileHandle.close()
+            let attributes = try FileManager.default.attributesOfItem(atPath: resourceURL.path)
+            let fileByteCount = (attributes[.size] as? NSNumber)?.int64Value
+            guard byteCount == verifiedSize.byteCount,
+                  fileByteCount == verifiedSize.byteCount else {
+                throw ResourceExportError.byteCountMismatch
+            }
+            try Task.checkCancellation()
+            try selectedResource.verifySource()
+            return LocalCompressionInput(
+                sourceURL: resourceURL,
+                verifiedSize: verifiedSize,
+                verifySourceIsCurrent: selectedResource.verifySource
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: resourceURL)
+            throw error
+        }
+    }
+
     private static func exportResource(
         _ selectedResource: SelectedResource,
         networkAccessAllowed: Bool,
@@ -54,7 +103,8 @@ struct PhotoResourceExporter {
             let byteCount = try await selectedResource.transfer(
                 fileHandle,
                 resourceURL,
-                networkAccessAllowed
+                networkAccessAllowed,
+                ResourceTransferProgress { _ in }
             )
             try fileHandle.close()
             let capabilities: MediaCapabilityDecision
@@ -72,13 +122,15 @@ struct PhotoResourceExporter {
         _ resource: PHAssetResource,
         to fileHandle: FileHandle,
         at resourceURL: URL,
-        networkAccessAllowed: Bool
+        networkAccessAllowed: Bool,
+        progress: @escaping @Sendable (Double) -> Void = { _ in }
     ) async throws -> Int64 {
         try await transfer(
             using: PhotoKitResourceDataRequester(resource: resource),
             to: fileHandle,
             at: resourceURL,
-            networkAccessAllowed: networkAccessAllowed
+            networkAccessAllowed: networkAccessAllowed,
+            progress: progress
         )
     }
 
@@ -86,7 +138,8 @@ struct PhotoResourceExporter {
         using requester: any ResourceDataRequester,
         to fileHandle: FileHandle,
         at resourceURL: URL,
-        networkAccessAllowed: Bool
+        networkAccessAllowed: Bool,
+        progress: @escaping @Sendable (Double) -> Void = { _ in }
     ) async throws -> Int64 {
         let operation = ResourceExportOperation(fileHandle: fileHandle) {
             requester.cancelDataRequest($0)
@@ -98,7 +151,9 @@ struct PhotoResourceExporter {
                     operation.setContinuation(continuation)
                     let requestID = requester.requestData(
                         isNetworkAccessAllowed: networkAccessAllowed,
-                        progressHandler: { progressLogger.record($0) },
+                        progressHandler: {
+                            if let value = progressLogger.record($0) { progress(value) }
+                        },
                         dataReceivedHandler: { operation.receive($0) },
                         completionHandler: { operation.finish(error: $0) }
                     )
@@ -152,12 +207,24 @@ protocol ResourceExportSource {
     func selectResource(assetIdentifier: String) throws -> SelectedResource
 }
 
+final class ResourceTransferProgress: @unchecked Sendable {
+    private let handler: @Sendable (Double) -> Void
+
+    init(_ handler: @escaping @Sendable (Double) -> Void) {
+        self.handler = handler
+    }
+
+    func report(_ fraction: Double) {
+        handler(fraction)
+    }
+}
+
 struct SelectedResource {
     let sourceModificationDate: Date
     let kind: MediaAsset.Kind
     let basis: String
     let filename: String
-    let transfer: (FileHandle, URL, Bool) async throws -> Int64
+    let transfer: (FileHandle, URL, Bool, ResourceTransferProgress) async throws -> Int64
     let verifySource: () throws -> Void
 }
 
@@ -253,14 +320,19 @@ final class ResourceExportOperation: @unchecked Sendable {
 private final class ResourceExportProgressLogger: @unchecked Sendable {
     private let lock = NSLock()
     private var lastLoggedProgress = 0.0
+    private var lastReportedProgress = 0.0
 
-    func record(_ progress: Double) {
+    func record(_ progress: Double) -> Double? {
+        let value = min(max(progress, 0), 1)
         lock.lock()
-        let shouldLog = progress >= 1 || progress - lastLoggedProgress >= 0.1
-        if shouldLog { lastLoggedProgress = progress }
+        let shouldLog = value >= 1 || value - lastLoggedProgress >= 0.1
+        let shouldReport = value >= 1 || value - lastReportedProgress >= 0.01
+        if shouldLog { lastLoggedProgress = value }
+        if shouldReport { lastReportedProgress = value }
         lock.unlock()
         if shouldLog {
-            AppLogger.shared.debug("ResourceExport", "Resource transfer progress=\(Int(progress * 100))%")
+            AppLogger.shared.debug("ResourceExport", "Resource transfer progress=\(Int(value * 100))%")
         }
+        return shouldReport ? value : nil
     }
 }

@@ -72,6 +72,8 @@ enum CompressionPhase: String, Codable, CaseIterable, Sendable {
     case needsReview
 }
 
+typealias CompressionProgressHandler = @Sendable (CompressionPhase, Double?) -> Void
+
 struct SavingsAssessment: Equatable, Sendable {
     enum Outcome: Equatable, Sendable {
         case unverified
