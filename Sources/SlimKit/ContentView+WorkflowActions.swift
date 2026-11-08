@@ -193,42 +193,56 @@ extension ContentView {
         }
         let store = SwiftDataCompressionWorkflowStore(modelContext: modelContext)
         isImporting = true
+        importProgressMessage = "Preparing replacements for import…"
         importStatusMessages = []
         Task { @MainActor in
             var messages: [String] = []
-            for artifact in artifacts {
-                do {
-                    guard let source = try await importer.snapshot(assetID: artifact.assetID) else {
-                        messages.append(
-                    "\(artifact.assetID): source is unavailable; import was not attempted."
-                )
-                        continue
-                    }
-                    let request = CompressionImportRequest(
-                        artifact: artifact,
-                        mediaKind: source.mediaKind,
-                        metadata: CompressionImportMetadata(
-                            creationDate: source.creationDate,
-                            location: source.location
-                        ),
-                        networkAccessAllowed: networkAccessAllowed
-                    )
-                    let result = await CompressionImportCoordinator.importAndVerify(
-                        request: request,
-                        resourceSource: PhotoKitResourceSource(),
+            for (index, artifact) in artifacts.enumerated() {
+                importProgressMessage = "Importing and verifying replacement \(index + 1) of \(artifacts.count)…"
+                messages.append(
+                    await importArtifact(
+                        artifact,
+                        networkAccessAllowed: networkAccessAllowed,
                         importer: importer,
-                        checkpointStore: store
+                        store: store
                     )
-                    messages.append(importResultMessage(result))
-                } catch {
-                    messages.append(
-                        "\(artifact.assetID): import was not attempted: \(error.localizedDescription)"
-                    )
-                }
+                )
             }
             importStatusMessages = messages
+            importProgressMessage = nil
             isImporting = false
             restoreRetainedArtifacts()
+        }
+    }
+
+    private func importArtifact(
+        _ artifact: CompressedMediaArtifact,
+        networkAccessAllowed: Bool,
+        importer: PhotoKitAssetImporter,
+        store: SwiftDataCompressionWorkflowStore
+    ) async -> String {
+        do {
+            guard let source = try await importer.snapshot(assetID: artifact.assetID) else {
+                return "\(artifact.assetID): source is unavailable; import was not attempted."
+            }
+            let request = CompressionImportRequest(
+                artifact: artifact,
+                mediaKind: source.mediaKind,
+                metadata: CompressionImportMetadata(
+                    creationDate: source.creationDate,
+                    location: source.location
+                ),
+                networkAccessAllowed: networkAccessAllowed
+            )
+            let result = await CompressionImportCoordinator.importAndVerify(
+                request: request,
+                resourceSource: PhotoKitResourceSource(),
+                importer: importer,
+                checkpointStore: store
+            )
+            return importResultMessage(result)
+        } catch {
+            return "\(artifact.assetID): import was not attempted: \(error.localizedDescription)"
         }
     }
 

@@ -14,9 +14,6 @@ extension ContentView {
                     onRefresh: library.refreshAssets
                 )
             }
-            if !selectedIDs.isEmpty {
-                selectionBar
-            }
         }
         .toolbar {
             ToolbarItem {
@@ -32,12 +29,19 @@ extension ContentView {
     }
 
     var workflowContent: some View {
-        Group {
+        VStack(spacing: 0) {
+            selectionActionsPanel
+            if isCompressing || isImporting || sizeProgressMessage != nil || sizeStatusMessage != nil {
+                Divider()
+                actionProgressPanel
+            }
+            Divider()
             if !compressionResults.isEmpty || !workflowRecords.isEmpty {
                 CompressionWorkflowPanel(
                     compressionResults: compressionResults,
                     workflowRecords: workflowRecords,
                     importStatusMessages: importStatusMessages,
+                    isImporting: isImporting,
                     compressionStatusMessage: compressionStatusMessage,
                     deletionStatusMessage: deletionStatusMessage,
                     onImport: { showingImportConfirmation = true },
@@ -54,9 +58,110 @@ extension ContentView {
                     systemImage: "clock.arrow.circlepath",
                     description: Text("Compression results and workflow messages will appear here.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .navigationTitle("Activity")
+    }
+
+    var selectionActionsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Selection & Actions")
+                    .font(.headline)
+                Spacer()
+                Text("\(selectedIDs.count) selected")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            if selectedIDs.isEmpty {
+                Text("Select media in the library to enable these actions.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Picker("Preset", selection: $compressionPreset) {
+                ForEach(CompressionPreset.allCases, id: \.self) { preset in
+                    Text(preset.rawValue).tag(preset)
+                }
+            }
+            .disabled(isActionInProgress)
+            Button {
+                showingCompressionConfirmation = true
+            } label: {
+                Label("Compress Selected", systemImage: "arrow.down.right.and.arrow.up.left")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(selectedIDs.isEmpty || isActionInProgress)
+            Button {
+                showingSizeExportConfirmation = true
+            } label: {
+                Label("Verify Sizes", systemImage: "checkmark.magnifyingglass")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(selectedIDs.isEmpty || isActionInProgress)
+            if !selectedIDs.isEmpty {
+                Button("Clear Selection", systemImage: "xmark.circle") {
+                    selectedIDs.removeAll()
+                    sizeStatusMessage = nil
+                }
+                .buttonStyle(.plain)
+                .disabled(isActionInProgress)
+            }
+        }
+        .padding(16)
+    }
+
+    var actionProgressPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Current Action")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if isCompressing {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(compressionProgressLabel)
+                            .font(.callout)
+                        if let fraction = compressionProgress?.fractionCompleted {
+                            ProgressView(value: fraction)
+                        } else {
+                            ProgressView()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Cancel") { compressionTask?.cancel() }
+                }
+            } else if isImporting {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text(importProgressMessage ?? "Importing and verifying replacements…")
+                        .font(.callout)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else if let sizeProgressMessage {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text(sizeProgressMessage)
+                        .font(.callout)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Cancel") { sizeTask?.cancel() }
+                }
+            } else if let sizeStatusMessage {
+                Label(sizeStatusMessage, systemImage: "checkmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35))
+    }
+
+    var isActionInProgress: Bool {
+        isCompressing || isImporting || sizeProgressMessage != nil
     }
 
     func rebuildLibraryPresentation() {
@@ -172,40 +277,4 @@ extension ContentView {
         }
     }
 
-    var selectionBar: some View {
-        HStack {
-            Text("\(selectedIDs.count) selected")
-                .fontWeight(.medium)
-            Spacer()
-            if isCompressing {
-                ProgressView(compressionProgressLabel)
-                Button("Cancel") { compressionTask?.cancel() }
-            } else if isImporting {
-                ProgressView("Importing and verifying…")
-            } else if let sizeProgressMessage {
-                ProgressView(sizeProgressMessage)
-                Button("Cancel") { sizeTask?.cancel() }
-            } else {
-                if let sizeStatusMessage {
-                    Text(sizeStatusMessage)
-                        .foregroundStyle(.secondary)
-                }
-                Picker("Preset", selection: $compressionPreset) {
-                    ForEach(CompressionPreset.allCases, id: \.self) { preset in
-                        Text(preset.rawValue).tag(preset)
-                    }
-                }
-                .frame(width: 160)
-                Button("Verify Sizes") { showingSizeExportConfirmation = true }
-                Button("Compress Selected") { showingCompressionConfirmation = true }
-                Button("Clear Selection") {
-                    selectedIDs.removeAll()
-                    sizeStatusMessage = nil
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(.bar)
-    }
 }

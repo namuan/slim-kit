@@ -5,6 +5,7 @@ struct CompressionWorkflowPanel: View {
     let compressionResults: [CompressionQueueResult]
     let workflowRecords: [CompressionWorkflowRecord]
     let importStatusMessages: [String]
+    let isImporting: Bool
     let compressionStatusMessage: String?
     let deletionStatusMessage: String?
     let onImport: () -> Void
@@ -51,7 +52,8 @@ struct CompressionWorkflowPanel: View {
                         .foregroundStyle(.secondary)
                 }
                 if hasCompressedResults {
-                    Button("Import Compressed Results", action: onImport)
+                    Button(isImporting ? "Importing…" : "Import Compressed Results", action: onImport)
+                        .disabled(isImporting)
                 }
                 Text("Photos edits, favorites, albums, and relationship data are not copied. " +
                      "Originals remain untouched unless a later separate deletion confirmation is completed.")

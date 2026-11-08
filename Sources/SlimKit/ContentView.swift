@@ -28,6 +28,7 @@ struct ContentView: View {
     @State var compressionTask: Task<Void, Never>?
     @State var isCompressing = false
     @State var isImporting = false
+    @State var importProgressMessage: String?
     @State var importStatusMessages: [String] = []
     @State var compressionStatusMessage: String?
     @State var showingCompressionConfirmation = false
