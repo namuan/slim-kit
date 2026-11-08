@@ -51,11 +51,15 @@ struct ContentView: View {
             }
             .navigationTitle("SlimKit")
             .listStyle(.sidebar)
-            .frame(minWidth: 180)
-        } detail: {
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
+        } content: {
             libraryContent
+                .navigationSplitViewColumnWidth(min: 500, ideal: 800)
+        } detail: {
+            workflowContent
+                .navigationSplitViewColumnWidth(min: 300, ideal: 380, max: 520)
         }
-        .frame(minWidth: 850, minHeight: 560)
+        .frame(minWidth: 1050, minHeight: 600)
         .onChange(of: sizeRecords.count) { _, _ in
             rebuildLibraryPresentation()
             capabilityCacheLogger.recordRestorations(for: visibleAssets, records: sizeRecordsByID)

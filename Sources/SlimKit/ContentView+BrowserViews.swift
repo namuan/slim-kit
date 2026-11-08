@@ -14,22 +14,6 @@ extension ContentView {
                     onRefresh: library.refreshAssets
                 )
             }
-            if !compressionResults.isEmpty || !workflowRecords.isEmpty {
-                CompressionWorkflowPanel(
-                    compressionResults: compressionResults,
-                    workflowRecords: workflowRecords,
-                    importStatusMessages: importStatusMessages,
-                    compressionStatusMessage: compressionStatusMessage,
-                    deletionStatusMessage: deletionStatusMessage,
-                    onImport: { showingImportConfirmation = true },
-                    onReviewDeletion: { operationID in
-                        pendingDeletionOperationID = operationID
-                        showingDeletionNetworkConfirmation = true
-                    },
-                    onRetryVerification: retryReplacementVerification,
-                    onRecoverDeletion: recoverInterruptedDeletion
-                )
-            }
             if !selectedIDs.isEmpty {
                 selectionBar
             }
@@ -45,6 +29,34 @@ extension ContentView {
                 .disabled(library.isLoading || !library.accessState.canRead)
             }
         }
+    }
+
+    var workflowContent: some View {
+        Group {
+            if !compressionResults.isEmpty || !workflowRecords.isEmpty {
+                CompressionWorkflowPanel(
+                    compressionResults: compressionResults,
+                    workflowRecords: workflowRecords,
+                    importStatusMessages: importStatusMessages,
+                    compressionStatusMessage: compressionStatusMessage,
+                    deletionStatusMessage: deletionStatusMessage,
+                    onImport: { showingImportConfirmation = true },
+                    onReviewDeletion: { operationID in
+                        pendingDeletionOperationID = operationID
+                        showingDeletionNetworkConfirmation = true
+                    },
+                    onRetryVerification: retryReplacementVerification,
+                    onRecoverDeletion: recoverInterruptedDeletion
+                )
+            } else {
+                ContentUnavailableView(
+                    "No Compression Activity",
+                    systemImage: "clock.arrow.circlepath",
+                    description: Text("Compression results and workflow messages will appear here.")
+                )
+            }
+        }
+        .navigationTitle("Activity")
     }
 
     func rebuildLibraryPresentation() {

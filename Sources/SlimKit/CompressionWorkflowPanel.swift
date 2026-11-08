@@ -61,7 +61,7 @@ struct CompressionWorkflowPanel: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 230)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.bar)
     }
 
