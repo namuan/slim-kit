@@ -17,22 +17,28 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
     private var scanTask: Task<Void, Never>?
     private var libraryChangeTask: Task<Void, Never>?
     private var scanID = UUID()
+    @ObservationIgnored
+    nonisolated(unsafe) private var hasStarted = false
 
     override init() {
         super.init()
-        guard !PhotosRuntimeEnvironment.isRunningTests else {
+        if PhotosRuntimeEnvironment.isRunningTests {
             AppLogger.shared.info("Photos", "Library model disabled in unit test host")
-            return
         }
-        PHPhotoLibrary.shared().register(self)
-        AppLogger.shared.info("Photos", "Observer registered; authorization=\(accessState.logLabel)")
-        refreshAssets()
     }
 
     deinit {
-        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
+        guard hasStarted else { return }
         PHPhotoLibrary.shared().unregisterChangeObserver(self)
         AppLogger.shared.info("Photos", "Observer unregistered")
+    }
+
+    func start() {
+        guard !PhotosRuntimeEnvironment.isRunningTests, !hasStarted else { return }
+        hasStarted = true
+        PHPhotoLibrary.shared().register(self)
+        AppLogger.shared.info("Photos", "Observer registered; authorization=\(accessState.logLabel)")
+        refreshAssets()
     }
 
     func connect() {

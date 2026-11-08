@@ -33,6 +33,7 @@ final class PhotosRuntimeEnvironmentTests: XCTestCase {
         XCTAssertEqual(model.accessState, .restricted)
         XCTAssertFalse(model.isLoading)
         XCTAssertTrue(model.assets.isEmpty)
+        model.start()
         model.connect()
         model.refreshAuthorization()
         model.refreshAssets()

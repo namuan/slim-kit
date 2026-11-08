@@ -90,7 +90,10 @@ struct ContentView: View {
             MediaPreviewView(asset: asset)
                 .frame(minWidth: 700, minHeight: 500)
         }
-        .onAppear(perform: restoreRetainedArtifacts)
+        .onAppear {
+            library.start()
+            restoreRetainedArtifacts()
+        }
         .confirmationDialog(
             "Compress selected originals?",
             isPresented: $showingCompressionConfirmation,
