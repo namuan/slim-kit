@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var sizeStatusMessage: String?
     @State private var showingSizeExportConfirmation = false
     @State private var capabilityCacheLogger = MediaCapabilityCacheLogger()
+    @State private var sortOrder = LibrarySortOrder.newest
     @State private var columnCount = 5
 
     private var keptIDs: Set<String> {
@@ -26,7 +27,7 @@ struct ContentView: View {
         Dictionary(sizeRecords.map { ($0.assetID, $0) }, uniquingKeysWith: { _, newest in newest })
     }
 
-    private var visibleAssets: [MediaAsset] {
+    private var filteredAssets: [MediaAsset] {
         switch filter {
         case .all:
             library.assets
@@ -37,6 +38,10 @@ struct ContentView: View {
         case .kept:
             library.assets.filter { keptIDs.contains($0.id) }
         }
+    }
+
+    private var visibleAssets: [MediaAsset] {
+        MediaAssetSorter.sorted(filteredAssets, by: sortOrder, sizeRecords: sizeRecordsByID)
     }
 
     var body: some View {
@@ -140,6 +145,12 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Picker("Sort", selection: $sortOrder) {
+                ForEach(LibrarySortOrder.allCases) { order in
+                    Text(order.rawValue).tag(order)
+                }
+            }
+            .frame(width: 150)
             Picker("Columns", selection: $columnCount) {
                 Text("4 columns").tag(4)
                 Text("5 columns").tag(5)
