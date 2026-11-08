@@ -330,7 +330,7 @@ enum MediaCapabilityInspector {
     }
 
     private static func isStandardDefinitionColor(_ value: String) -> Bool {
-        ["709", "smpte-c", "ebu 3213"].contains(where: value.contains)
+        ["709", "smpte-c", "smpte_c", "ebu 3213"].contains(where: value.contains)
     }
 
     private static func isStandardSDRTransferFunction(_ value: String) -> Bool {

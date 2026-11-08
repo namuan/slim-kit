@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 enum MediaSizeState: Equatable, Sendable {
@@ -16,6 +17,43 @@ enum CompressionPreset: String, CaseIterable, Codable, Sendable {
     case highQuality
     case balanced
     case maximumSavings
+
+    var policy: CompressionPresetPolicy {
+        switch self {
+        case .highQuality:
+            CompressionPresetPolicy(
+                imageQuality: 0.92,
+                maximumImageDimension: nil,
+                maximumVideoDimension: nil,
+                videoExportPreset: AVAssetExportPresetHighestQuality,
+                minimumSavingsFraction: 0.05
+            )
+        case .balanced:
+            CompressionPresetPolicy(
+                imageQuality: 0.82,
+                maximumImageDimension: nil,
+                maximumVideoDimension: 1_920,
+                videoExportPreset: AVAssetExportPresetMediumQuality,
+                minimumSavingsFraction: 0.05
+            )
+        case .maximumSavings:
+            CompressionPresetPolicy(
+                imageQuality: 0.68,
+                maximumImageDimension: 2_048,
+                maximumVideoDimension: 1_280,
+                videoExportPreset: AVAssetExportPresetLowQuality,
+                minimumSavingsFraction: 0.05
+            )
+        }
+    }
+}
+
+struct CompressionPresetPolicy: Equatable, Sendable {
+    let imageQuality: Double
+    let maximumImageDimension: Int?
+    let maximumVideoDimension: Int?
+    let videoExportPreset: String
+    let minimumSavingsFraction: Double
 }
 
 enum CompressionPhase: String, Codable, CaseIterable, Sendable {
