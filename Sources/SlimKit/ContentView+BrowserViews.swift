@@ -47,15 +47,39 @@ extension ContentView {
         }
     }
 
+    func rebuildLibraryPresentation() {
+        let records: [String: VerifiedSizeRecord] = Dictionary(
+            sizeRecords.map { ($0.assetID, $0) },
+            uniquingKeysWith: { _, newest in newest }
+        )
+        sizeRecordsByID = records
+        let assetsToSort: [MediaAsset]
+        switch filter {
+        case .all:
+            assetsToSort = library.assets
+        case .photos:
+            assetsToSort = library.assets.filter { $0.kind == .photo }
+        case .videos:
+            assetsToSort = library.assets.filter { $0.kind == .video }
+        case .kept:
+            let kept = keptIDs
+            assetsToSort = library.assets.filter { kept.contains($0.id) }
+        }
+        visibleAssets = MediaAssetSorter.sorted(assetsToSort, by: sortOrder, sizeRecords: records)
+        verifiedVisibleAssetCount = visibleAssets.reduce(into: 0) { count, asset in
+            if let record = records[asset.id], record.isValid(for: asset) {
+                count += 1
+            }
+        }
+    }
+
     var headerSummary: String {
         if library.isLoading {
             return "Scanning Photos · \(library.scannedAssetCount) of \(library.totalAssetCount) items"
         }
-        let verifiedCount = visibleAssets.filter { asset in
-            guard let record = sizeRecordsByID[asset.id] else { return false }
-            return record.isValid(for: asset)
-        }.count
-        let sizeSummary = verifiedCount == 0 ? "sizes not calculated" : "\(verifiedCount) sizes verified"
+        let sizeSummary = verifiedVisibleAssetCount == 0
+            ? "sizes not calculated"
+            : "\(verifiedVisibleAssetCount) sizes verified"
         let count = "\(visibleAssets.count) items"
         if library.accessState == .limited {
             return "\(count) · limited Photos access · \(sizeSummary)"

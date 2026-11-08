@@ -6,11 +6,14 @@ struct ContentView: View {
     @Environment(\.modelContext) var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Query private var reviewRecords: [ReviewRecord]
-    @Query private var sizeRecords: [VerifiedSizeRecord]
+    @Query var sizeRecords: [VerifiedSizeRecord]
     @Query var workflowRecords: [CompressionWorkflowRecord]
     @State var library = PhotosLibraryModel()
     @State var filter = LibraryFilter.all
     @State var selectedIDs = Set<String>()
+    @State var sizeRecordsByID: [String: VerifiedSizeRecord] = [:]
+    @State var visibleAssets: [MediaAsset] = []
+    @State var verifiedVisibleAssetCount = 0
     @State var previewAsset: MediaAsset?
     @State var sizeTask: Task<Void, Never>?
     @State var sizeProgressMessage: String?
@@ -40,27 +43,6 @@ struct ContentView: View {
         Set(reviewRecords.filter(\.isKept).map(\.assetID))
     }
 
-    var sizeRecordsByID: [String: VerifiedSizeRecord] {
-        Dictionary(sizeRecords.map { ($0.assetID, $0) }, uniquingKeysWith: { _, newest in newest })
-    }
-
-    var filteredAssets: [MediaAsset] {
-        switch filter {
-        case .all:
-            library.assets
-        case .photos:
-            library.assets.filter { $0.kind == .photo }
-        case .videos:
-            library.assets.filter { $0.kind == .video }
-        case .kept:
-            library.assets.filter { keptIDs.contains($0.id) }
-        }
-    }
-
-    var visibleAssets: [MediaAsset] {
-        MediaAssetSorter.sorted(filteredAssets, by: sortOrder, sizeRecords: sizeRecordsByID)
-    }
-
     var body: some View {
         NavigationSplitView {
             List(LibraryFilter.allCases, selection: $filter) { item in
@@ -75,10 +57,24 @@ struct ContentView: View {
         }
         .frame(minWidth: 850, minHeight: 560)
         .onChange(of: sizeRecords.count) { _, _ in
+            rebuildLibraryPresentation()
             capabilityCacheLogger.recordRestorations(for: visibleAssets, records: sizeRecordsByID)
         }
         .onChange(of: library.assets.count) { _, _ in
+            rebuildLibraryPresentation()
             capabilityCacheLogger.recordRestorations(for: visibleAssets, records: sizeRecordsByID)
+        }
+        .onChange(of: library.assetPresentationRevision) { _, _ in
+            rebuildLibraryPresentation()
+        }
+        .onChange(of: filter) { _, _ in
+            rebuildLibraryPresentation()
+        }
+        .onChange(of: sortOrder) { _, _ in
+            rebuildLibraryPresentation()
+        }
+        .onChange(of: keptIDs) { _, _ in
+            rebuildLibraryPresentation()
         }
         .onChange(of: scenePhase) { _, phase in
             AppLogger.shared.info("Application", "Scene phase changed to \(phase)")
@@ -92,6 +88,7 @@ struct ContentView: View {
         }
         .onAppear {
             library.start()
+            rebuildLibraryPresentation()
             restoreRetainedArtifacts()
         }
         .confirmationDialog(

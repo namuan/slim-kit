@@ -95,6 +95,7 @@ extension ContentView {
     }
 
     private func finishSizeVerification(measuredCount: Int, failureCount: Int) {
+        rebuildLibraryPresentation()
         if Task.isCancelled {
             AppLogger.shared.info("ResourceExport", "Selected size verification cancelled")
         } else {

@@ -13,6 +13,7 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
     private(set) var isLoading = false
     private(set) var scannedAssetCount = 0
     private(set) var totalAssetCount = 0
+    private(set) var assetPresentationRevision = 0
     private(set) var errorMessage: String?
     private var scanTask: Task<Void, Never>?
     private var libraryChangeTask: Task<Void, Never>?
@@ -70,6 +71,7 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
     func updateEligibility(_ eligibility: MediaEligibility, for identifier: String) {
         guard let index = assets.firstIndex(where: { $0.id == identifier }) else { return }
         assets[index].eligibility = eligibility
+        assetPresentationRevision += 1
     }
 
     func applyCapabilityDecision(_ decision: MediaCapabilityDecision, for identifier: String) {
