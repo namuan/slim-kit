@@ -119,6 +119,7 @@ struct MediaCard: View {
 
     private func loadThumbnail() {
         cancelThumbnailRequest()
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
         thumbnail = nil
         let requestToken = UUID()
         thumbnailRequestToken = requestToken
@@ -160,8 +161,9 @@ struct MediaCard: View {
     private func cancelThumbnailRequest() {
         thumbnailRequestToken = UUID()
         guard let thumbnailRequestID else { return }
+        self.thumbnailRequestID = nil
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
         AppLogger.shared.debug("Thumbnail", "Request cancelled because its card left the visible grid")
         PHImageManager.default().cancelImageRequest(thumbnailRequestID)
-        self.thumbnailRequestID = nil
     }
 }

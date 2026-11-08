@@ -94,6 +94,14 @@ final class PhotoKitResourceSourceTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
     }
 
+    func testLivePhotoKitCatalogIsDisabledInsideXCTestHost() {
+        XCTAssertTrue(PhotosRuntimeEnvironment.isRunningTests)
+        let catalog = LivePhotoKitResourceCatalog()
+
+        XCTAssertFalse(catalog.canReadPhotos)
+        XCTAssertNil(catalog.snapshot(assetIdentifier: "must-not-be-fetched"))
+    }
+
     func testPhotoKitSourceStopsBeforeSnapshotWhenAccessIsUnavailable() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

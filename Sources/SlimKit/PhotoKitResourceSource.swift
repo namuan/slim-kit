@@ -116,11 +116,13 @@ struct PhotoKitResourceSource: ResourceExportSource {
 
 struct LivePhotoKitResourceCatalog: PhotoKitResourceCatalog {
     var canReadPhotos: Bool {
-        PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite)).canRead
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return false }
+        return PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite)).canRead
     }
 
     func snapshot(assetIdentifier: String) -> PhotoKitAssetSnapshot? {
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil).firstObject else {
+        guard !PhotosRuntimeEnvironment.isRunningTests,
+              let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil).firstObject else {
             return nil
         }
         let kind: PhotoKitAssetKind

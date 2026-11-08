@@ -5,7 +5,7 @@ import SwiftUI
 @main
 struct SlimKitApp: App {
     private static var isUnitTestHost: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        PhotosRuntimeEnvironment.isRunningTests
     }
 
     init() {

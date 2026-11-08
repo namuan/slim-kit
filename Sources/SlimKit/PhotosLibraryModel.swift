@@ -5,7 +5,10 @@ import Photos
 @MainActor
 @Observable
 final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
-    private(set) var accessState = PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
+    private(set) var accessState: PhotosAccessState = {
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return .restricted }
+        return PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
+    }()
     private(set) var assets: [MediaAsset] = []
     private(set) var isLoading = false
     private(set) var scannedAssetCount = 0
@@ -17,17 +20,23 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
 
     override init() {
         super.init()
+        guard !PhotosRuntimeEnvironment.isRunningTests else {
+            AppLogger.shared.info("Photos", "Library model disabled in unit test host")
+            return
+        }
         PHPhotoLibrary.shared().register(self)
         AppLogger.shared.info("Photos", "Observer registered; authorization=\(accessState.logLabel)")
         refreshAssets()
     }
 
     deinit {
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
         PHPhotoLibrary.shared().unregisterChangeObserver(self)
         AppLogger.shared.info("Photos", "Observer unregistered")
     }
 
     func connect() {
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
         errorMessage = nil
         AppLogger.shared.info("Authorization", "User requested read-write Photos access")
         PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
@@ -41,6 +50,7 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
     }
 
     func refreshAuthorization() {
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
         let currentState = PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
         guard currentState != accessState else {
             AppLogger.shared.debug("Authorization", "Foreground recheck unchanged; status=\(currentState.logLabel)")
@@ -61,6 +71,12 @@ final class PhotosLibraryModel: NSObject, PHPhotoLibraryChangeObserver {
     }
 
     func refreshAssets() {
+        guard !PhotosRuntimeEnvironment.isRunningTests else {
+            accessState = .restricted
+            isLoading = false
+            assets = []
+            return
+        }
         libraryChangeTask?.cancel()
         libraryChangeTask = nil
         accessState = PhotosAccessState(PHPhotoLibrary.authorizationStatus(for: .readWrite))

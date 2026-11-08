@@ -25,6 +25,10 @@ final class PhotoKitResourceDataRequester: ResourceDataRequester, @unchecked Sen
         dataReceivedHandler: @escaping (Data) -> Void,
         completionHandler: @escaping (Error?) -> Void
     ) -> PHAssetResourceDataRequestID {
+        guard !PhotosRuntimeEnvironment.isRunningTests else {
+            completionHandler(ResourceExportError.accessUnavailable)
+            return 0
+        }
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = isNetworkAccessAllowed
         options.progressHandler = progressHandler
@@ -37,6 +41,7 @@ final class PhotoKitResourceDataRequester: ResourceDataRequester, @unchecked Sen
     }
 
     func cancelDataRequest(_ requestID: PHAssetResourceDataRequestID) {
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
         PHAssetResourceManager.default().cancelDataRequest(requestID)
     }
 }

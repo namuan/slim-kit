@@ -124,6 +124,10 @@ struct MediaPreviewView: View {
 private extension MediaPreviewView {
     func requestPreview() {
         cancelCurrentRequest()
+        guard !PhotosRuntimeEnvironment.isRunningTests else {
+            finishWithError("Photo previews are disabled in the test host.", requestToken: requestToken)
+            return
+        }
         let token = UUID()
         requestToken = token
         downloadProgress = nil
@@ -301,9 +305,10 @@ private extension MediaPreviewView {
 
     func cancelCurrentRequest() {
         guard let requestID else { return }
+        self.requestID = nil
+        guard !PhotosRuntimeEnvironment.isRunningTests else { return }
         PHImageManager.default().cancelImageRequest(requestID)
         AppLogger.shared.info("Preview", "PhotoKit request cancelled")
-        self.requestID = nil
     }
 }
 
