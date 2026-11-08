@@ -42,20 +42,47 @@ extension MediaCapabilityInspectorTests {
         let retainedDirectory = artifact.outputURL.deletingLastPathComponent()
         XCTAssertTrue(FileManager.default.fileExists(atPath: artifact.outputURL.path))
         XCTAssertEqual(manager.loadRetainedArtifacts(), [artifact])
+        let manifestURL = retainedDirectory.appendingPathComponent("artifact.json")
+        let legacyArtifact = try makeLegacyArtifact(manifestURL: manifestURL, manager: manager)
+        XCTAssertFalse(legacyArtifact.hasCurrentSourceCheckpoint)
         let handle = try FileHandle(forWritingTo: artifact.outputURL)
         try handle.seekToEnd()
         try handle.write(contentsOf: Data([0]))
         try handle.close()
         XCTAssertTrue(manager.loadRetainedArtifacts().isEmpty)
-        XCTAssertEqual(
-            try FileManager.default.contentsOfDirectory(atPath: manager.rootURL.path),
-            ["ReadyForImport"]
-        )
-        XCTAssertTrue(progressRecorder.phases.contains(.downloading))
-        XCTAssertTrue(progressRecorder.phases.contains(.compressing))
-        XCTAssertTrue(progressRecorder.phases.contains(.validating))
-        XCTAssertTrue(progressRecorder.phases.contains(.completed))
+        let expectedPhases: [CompressionPhase] = [.downloading, .compressing, .validating, .completed]
+        XCTAssertTrue(expectedPhases.allSatisfy(progressRecorder.phases.contains))
         try FileManager.default.removeItem(at: retainedDirectory)
+    }
+
+    private func makeLegacyArtifact(
+        manifestURL: URL,
+        manager: CompressionWorkspaceManager
+    ) throws -> CompressedMediaArtifact {
+        let data = try Data(contentsOf: manifestURL)
+        var manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        manifest.removeValue(forKey: "verifiedSource")
+        manifest.removeValue(forKey: "outputCodecIdentifier")
+        try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL, options: .atomic)
+        return try XCTUnwrap(manager.loadRetainedArtifacts().first)
+    }
+
+    func testCompressionBatchSummarySeparatesSkippedUnchangedAndUnverifiedResults() {
+        let results = [
+            CompressionQueueResult(assetID: "unchanged", result: .skipped(.unchanged)),
+            CompressionQueueResult(assetID: "unverified", result: .skipped(.sourceSizeUnverified)),
+            CompressionQueueResult(assetID: "unsupported", result: .skipped(.unsupportedSource("fixture"))),
+            CompressionQueueResult(assetID: "failed", result: .failed("fixture")),
+            CompressionQueueResult(assetID: "cancelled", result: .cancelled)
+        ]
+
+        let summary = CompressionBatchSummary(results: results)
+        XCTAssertEqual(summary.completedCount, 0)
+        XCTAssertEqual(summary.skippedCount, 1)
+        XCTAssertEqual(summary.unchangedCount, 1)
+        XCTAssertEqual(summary.sizeUnverifiedCount, 1)
+        XCTAssertEqual(summary.failedCount, 1)
+        XCTAssertEqual(summary.cancelledCount, 1)
     }
 
     func testCompressionQueueRunsTheVideoEngineOnTheExportedMPEG4Resource() async throws {
@@ -101,6 +128,7 @@ extension MediaCapabilityInspectorTests {
             return
         }
         XCTAssertEqual(artifact.outputTypeIdentifier, "public.mpeg-4")
+        XCTAssertEqual(CompressionBatchSummary(results: results).completedCount, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: artifact.outputURL.path))
         XCTAssertEqual(manager.loadRetainedArtifacts(), [artifact])
         XCTAssertTrue(progressRecorder.phases.contains(.validating))

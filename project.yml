@@ -16,7 +16,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.slimkit.app
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: SlimKit accesses your Photos library so you can browse and locally compress selected photos and videos.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: SlimKit accesses Photos to browse and locally compress media, import verified replacements, and optionally delete originals after separate confirmation.
         CODE_SIGN_ENTITLEMENTS: Sources/SlimKit/SlimKit.entitlements
         ENABLE_APP_SANDBOX: YES
   SlimKitTests:

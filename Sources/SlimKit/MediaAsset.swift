@@ -2,7 +2,7 @@ import Foundation
 import Photos
 
 struct MediaAsset: Identifiable, Hashable, Sendable {
-    enum Kind: String, Sendable {
+    enum Kind: String, Codable, Sendable {
         case photo
         case video
     }

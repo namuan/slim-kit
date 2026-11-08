@@ -3,31 +3,48 @@ import SwiftData
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Query private var reviewRecords: [ReviewRecord]
     @Query private var sizeRecords: [VerifiedSizeRecord]
-    @State private var library = PhotosLibraryModel()
-    @State private var filter = LibraryFilter.all
-    @State private var selectedIDs = Set<String>()
-    @State private var previewAsset: MediaAsset?
-    @State private var sizeTask: Task<Void, Never>?
-    @State private var sizeProgressMessage: String?
-    @State private var sizeStatusMessage: String?
-    @State private var showingSizeExportConfirmation = false
+    @Query var workflowRecords: [CompressionWorkflowRecord]
+    @State var library = PhotosLibraryModel()
+    @State var filter = LibraryFilter.all
+    @State var selectedIDs = Set<String>()
+    @State var previewAsset: MediaAsset?
+    @State var sizeTask: Task<Void, Never>?
+    @State var sizeProgressMessage: String?
+    @State var sizeStatusMessage: String?
+    @State var showingSizeExportConfirmation = false
     @State private var capabilityCacheLogger = MediaCapabilityCacheLogger()
-    @State private var sortOrder = LibrarySortOrder.newest
-    @State private var columnCount = 5
+    @State var sortOrder = LibrarySortOrder.newest
+    @State var columnCount = 5
+    @State var compressionPreset = CompressionPreset.balanced
+    @State var compressionResults: [CompressionQueueResult] = []
+    @State var compressionProgress: CompressionQueueProgress?
+    @State var compressionTask: Task<Void, Never>?
+    @State var isCompressing = false
+    @State var isImporting = false
+    @State var importStatusMessages: [String] = []
+    @State var compressionStatusMessage: String?
+    @State var showingCompressionConfirmation = false
+    @State var showingImportConfirmation = false
+    @State var showingDeletionNetworkConfirmation = false
+    @State var showingDeletionConfirmation = false
+    @State var pendingDeletionOperationID: String?
+    @State var pendingDeletionReview: OriginalDeletionReview?
+    @State var deletionNetworkAccessAllowed = false
+    @State var deletionStatusMessage: String?
 
-    private var keptIDs: Set<String> {
+    var keptIDs: Set<String> {
         Set(reviewRecords.filter(\.isKept).map(\.assetID))
     }
 
-    private var sizeRecordsByID: [String: VerifiedSizeRecord] {
+    var sizeRecordsByID: [String: VerifiedSizeRecord] {
         Dictionary(sizeRecords.map { ($0.assetID, $0) }, uniquingKeysWith: { _, newest in newest })
     }
 
-    private var filteredAssets: [MediaAsset] {
+    var filteredAssets: [MediaAsset] {
         switch filter {
         case .all:
             library.assets
@@ -40,7 +57,7 @@ struct ContentView: View {
         }
     }
 
-    private var visibleAssets: [MediaAsset] {
+    var visibleAssets: [MediaAsset] {
         MediaAssetSorter.sorted(filteredAssets, by: sortOrder, sizeRecords: sizeRecordsByID)
     }
 
@@ -73,6 +90,71 @@ struct ContentView: View {
             MediaPreviewView(asset: asset)
                 .frame(minWidth: 700, minHeight: 500)
         }
+        .onAppear(perform: restoreRetainedArtifacts)
+        .confirmationDialog(
+            "Compress selected originals?",
+            isPresented: $showingCompressionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Allow iCloud Downloads and Compress") {
+                startCompression(networkAccessAllowed: true)
+            }
+            Button("Use Local Resources Only") {
+                startCompression(networkAccessAllowed: false)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The selected originals may be exported locally. Photos will not be changed. " +
+                 "Choose whether SlimKit may download missing iCloud resources.")
+        }
+        .confirmationDialog(
+            "Re-verify original and replacement?",
+            isPresented: $showingDeletionNetworkConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Allow iCloud Downloads and Continue") {
+                prepareOriginalDeletion(networkAccessAllowed: true)
+            }
+            Button("Use Local Resources Only") {
+                prepareOriginalDeletion(networkAccessAllowed: false)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("SlimKit will freshly export and verify the original and replacement. " +
+                 "This may download iCloud resources, but will not delete anything until a separate confirmation.")
+        }
+        .confirmationDialog(
+            "Delete the original from Photos?",
+            isPresented: $showingDeletionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Original from Photos", role: .destructive) {
+                deleteOriginalAfterConfirmation()
+            }
+            Button("Keep Original", role: .cancel) {
+                pendingDeletionReview = nil
+                pendingDeletionOperationID = nil
+            }
+        } message: {
+            Text(deletionConfirmationMessage)
+        }
+        .confirmationDialog(
+            "Import compressed results to Photos?",
+            isPresented: $showingImportConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Import and Verify with iCloud Access") {
+                importCompressedResults(networkAccessAllowed: true)
+            }
+            Button("Import and Verify Local Resources Only") {
+                importCompressedResults(networkAccessAllowed: false)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This adds new Photos assets. Originals remain untouched. " +
+                 "SlimKit independently checks each replacement before it can be considered safe " +
+                 "for any later deletion decision.")
+        }
         .alert(
             "Export selected originals to verify size?",
             isPresented: $showingSizeExportConfirmation
@@ -86,259 +168,6 @@ struct ContentView: View {
                 "SlimKit will export selected originals, including iCloud downloads. " +
                     "Temporary files are removed; Photos items are unchanged."
             )
-        }
-    }
-
-    private var libraryContent: some View {
-        VStack(spacing: 0) {
-            header
-            if library.accessState.canRead {
-                mediaBrowser
-            } else {
-                PhotosAuthorizationView(
-                    accessState: library.accessState,
-                    errorMessage: library.errorMessage,
-                    onConnect: library.connect,
-                    onRefresh: library.refreshAssets
-                )
-            }
-            if !selectedIDs.isEmpty {
-                selectionBar
-            }
-        }
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    AppLogger.shared.info("PhotosScan", "User requested library refresh")
-                    library.refreshAssets()
-                } label: {
-                    Label("Refresh Library", systemImage: "arrow.clockwise")
-                }
-                .disabled(library.isLoading || !library.accessState.canRead)
-            }
-        }
-    }
-
-    private var headerSummary: String {
-        if library.isLoading {
-            return "Scanning Photos · \(library.scannedAssetCount) of \(library.totalAssetCount) items"
-        }
-        let cachedSizes = sizeRecordsByID
-        let verifiedCount = visibleAssets.filter { asset in
-            guard let record = cachedSizes[asset.id] else { return false }
-            return record.isValid(for: asset)
-        }.count
-        let sizeSummary = verifiedCount == 0 ? "sizes not calculated" : "\(verifiedCount) sizes verified"
-        let count = "\(visibleAssets.count) items"
-        if library.accessState == .limited {
-            return "\(count) · limited Photos access · \(sizeSummary)"
-        }
-        return "\(count) · \(sizeSummary)"
-    }
-
-    private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(filter.rawValue)
-                    .font(.largeTitle.weight(.semibold))
-                Text(headerSummary)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("Sort", selection: $sortOrder) {
-                ForEach(LibrarySortOrder.allCases) { order in
-                    Text(order.rawValue).tag(order)
-                }
-            }
-            .frame(width: 150)
-            Picker("Columns", selection: $columnCount) {
-                Text("4 columns").tag(4)
-                Text("5 columns").tag(5)
-                Text("6 columns").tag(6)
-                Text("7 columns").tag(7)
-            }
-            .frame(width: 130)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 18)
-    }
-
-    private var mediaBrowser: some View {
-        Group {
-            if library.isLoading && library.assets.isEmpty {
-                ProgressView("Loading Photos library…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if visibleAssets.isEmpty {
-                ContentUnavailableView(
-                    filter == .kept ? "No Kept Items" : "No Media Found",
-                    systemImage: "photo.on.rectangle.angled",
-                    description: Text(
-                        filter == .kept
-                            ? "Use the context menu on an item to keep it here."
-                            : "No accessible photos or videos match this view."
-                    )
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount),
-                        spacing: 12
-                    ) {
-                        ForEach(visibleAssets) { asset in
-                            MediaCard(
-                                asset: MediaCapabilityCachePresentation.asset(
-                                    for: asset,
-                                    record: sizeRecordsByID[asset.id]
-                                ),
-                                sizeLabel: MediaSizePresentation.label(
-                                    for: asset,
-                                    record: sizeRecordsByID[asset.id]
-                                ),
-                                isSelected: selectedIDs.contains(asset.id),
-                                isKept: keptIDs.contains(asset.id),
-                                onSelect: { toggleSelection(asset.id) },
-                                onKeep: { setKept(!keptIDs.contains(asset.id), for: asset.id) },
-                                onPreview: { previewAsset = asset }
-                            )
-                        }
-                    }
-                    .padding(20)
-                }
-            }
-        }
-    }
-
-    private var selectionBar: some View {
-        HStack {
-            Text("\(selectedIDs.count) selected")
-                .fontWeight(.medium)
-            Spacer()
-            if let sizeProgressMessage {
-                ProgressView(sizeProgressMessage)
-                Button("Cancel") {
-                    sizeTask?.cancel()
-                }
-            } else {
-                if let sizeStatusMessage {
-                    Text(sizeStatusMessage)
-                        .foregroundStyle(.secondary)
-                }
-                Button("Verify Sizes") {
-                    showingSizeExportConfirmation = true
-                }
-                Button("Clear Selection") {
-                    selectedIDs.removeAll()
-                    sizeStatusMessage = nil
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(.bar)
-    }
-
-}
-
-private extension ContentView {
-    func calculateSelectedSizes() {
-        let selectedAssets = library.assets.filter { selectedIDs.contains($0.id) }
-        guard !selectedAssets.isEmpty else { return }
-        sizeStatusMessage = nil
-        sizeTask = Task { @MainActor in
-            var recordsByID = sizeRecordsByID
-            var measuredCount = 0
-            var failureCount = 0
-            for (index, asset) in selectedAssets.enumerated() {
-                guard !Task.isCancelled else { break }
-                sizeProgressMessage = "Exporting \(index + 1) of \(selectedAssets.count)"
-                do {
-                    let measurement = try await PhotoResourceExporter.measure(
-                        assetIdentifier: asset.id,
-                        networkAccessAllowed: true
-                    )
-                    guard !Task.isCancelled else { break }
-                    storeVerifiedSize(
-                        measurement.size,
-                        capabilities: measurement.capabilities,
-                        for: asset,
-                        recordsByID: &recordsByID
-                    )
-                    library.applyCapabilityDecision(measurement.capabilities, for: asset.id)
-                    measuredCount += 1
-                } catch is CancellationError {
-                    break
-                } catch let error as ResourceExportError {
-                    markSizeUnavailable(error, for: asset)
-                    failureCount += 1
-                } catch {
-                    markSizeUnavailable(error, for: asset)
-                    failureCount += 1
-                }
-            }
-            if Task.isCancelled {
-                AppLogger.shared.info("ResourceExport", "Selected size verification cancelled")
-            } else {
-                sizeStatusMessage = "\(measuredCount) verified · \(failureCount) unavailable"
-            }
-            sizeProgressMessage = nil
-            sizeTask = nil
-        }
-    }
-
-    func markSizeUnavailable(_ error: Error, for asset: MediaAsset) {
-        if let resourceError = error as? ResourceExportError,
-           case let .unsupported(reason) = resourceError {
-            library.updateEligibility(.unsupported(reason), for: asset.id)
-        } else {
-            library.updateEligibility(
-                .unavailable("The selected resource could not be verified."),
-                for: asset.id
-            )
-        }
-        AppLogger.shared.warning(
-            "ResourceExport",
-            "Selected resource not measured; error=\(error.localizedDescription)"
-        )
-    }
-
-    func storeVerifiedSize(
-        _ size: VerifiedResourceSize,
-        capabilities: MediaCapabilityDecision,
-        for asset: MediaAsset,
-        recordsByID: inout [String: VerifiedSizeRecord]
-    ) {
-        if let record = recordsByID[asset.id] {
-            record.update(with: size, capabilities: capabilities)
-        } else {
-            let record = VerifiedSizeRecord(size: size, capabilities: capabilities)
-            modelContext.insert(record)
-            recordsByID[asset.id] = record
-        }
-    }
-
-    func toggleSelection(_ id: String) {
-        sizeStatusMessage = nil
-        if selectedIDs.contains(id) {
-            selectedIDs.remove(id)
-        } else {
-            selectedIDs.insert(id)
-        }
-    }
-
-    func setKept(_ isKept: Bool, for id: String) {
-        AppLogger.shared.info("Review", "Keep state changed; kept=\(isKept)")
-        let descriptor = FetchDescriptor<ReviewRecord>(predicate: #Predicate { $0.assetID == id })
-        let existing = try? modelContext.fetch(descriptor).first
-        if let existing {
-            if isKept {
-                existing.isKept = true
-                existing.updatedAt = .now
-            } else {
-                modelContext.delete(existing)
-            }
-        } else if isKept {
-            modelContext.insert(ReviewRecord(assetID: id, isKept: true))
         }
     }
 }

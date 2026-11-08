@@ -73,9 +73,13 @@ struct CompressionWorkspaceManager {
                 savedBytes: artifact.savedBytes,
                 savingsFraction: artifact.savingsFraction,
                 outputTypeIdentifier: artifact.outputTypeIdentifier,
+                outputCodecIdentifier: artifact.outputCodecIdentifier,
                 pixelWidth: artifact.pixelWidth,
                 pixelHeight: artifact.pixelHeight,
-                outputURL: retainedURL
+                videoDuration: artifact.videoDuration,
+                videoFrameRate: artifact.videoFrameRate,
+                outputURL: retainedURL,
+                verifiedSource: artifact.verifiedSource
             )
             let manifest = try JSONEncoder().encode(retainedArtifact)
             try manifest.write(to: manifestURL, options: .atomic)

@@ -1,6 +1,6 @@
 import Foundation
 
-struct VerifiedResourceSize: Equatable, Sendable {
+struct VerifiedResourceSize: Codable, Equatable, Sendable {
     let assetID: String
     let byteCount: Int64
     let sourceModificationDate: Date

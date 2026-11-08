@@ -68,6 +68,7 @@ extension MediaCapabilityInspectorTests {
         XCTAssertLessThan(artifact.outputBytes, artifact.sourceBytes)
         XCTAssertGreaterThanOrEqual(artifact.savingsFraction, 0.05)
         XCTAssertEqual(artifact.outputTypeIdentifier, "public.mpeg-4")
+        XCTAssertFalse(try XCTUnwrap(artifact.outputCodecIdentifier).isEmpty)
         let outputCapabilities = await MediaCapabilityInspector.inspectVideo(at: artifact.outputURL)
         XCTAssertEqual(outputCapabilities, .supported)
         XCTAssertLessThanOrEqual(artifact.pixelWidth, 320)

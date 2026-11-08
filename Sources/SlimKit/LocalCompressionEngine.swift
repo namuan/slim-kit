@@ -8,19 +8,6 @@ struct LocalCompressionInput {
     let verifySourceIsCurrent: () throws -> Void
 }
 
-struct CompressedMediaArtifact: Codable, Equatable, Sendable {
-    let assetID: String
-    let preset: CompressionPreset
-    let sourceBytes: Int64
-    let outputBytes: Int64
-    let savedBytes: Int64
-    let savingsFraction: Double
-    let outputTypeIdentifier: String
-    let pixelWidth: Int
-    let pixelHeight: Int
-    let outputURL: URL
-}
-
 enum CompressionAttempt: Equatable, Sendable {
     case compressed(CompressedMediaArtifact)
     case skipped(CompressionSkipReason)
@@ -33,6 +20,7 @@ enum CompressionSkipReason: Equatable, Sendable {
     case unsupportedImageFormat(String)
     case unsupportedVideoPreset(String)
     case outputNotSmaller
+    case unchanged
     case belowMinimumSavings
 }
 
@@ -132,9 +120,13 @@ enum ImageCompressionEngine {
             savedBytes: savings.bytes,
             savingsFraction: savings.fraction,
             outputTypeIdentifier: source.outputTypeIdentifier,
+            outputCodecIdentifier: nil,
             pixelWidth: output.width,
             pixelHeight: output.height,
-            outputURL: output.outputURL
+            videoDuration: nil,
+            videoFrameRate: nil,
+            outputURL: output.outputURL,
+            verifiedSource: input.verifiedSize
         )
     }
 
@@ -255,6 +247,7 @@ enum ImageCompressionEngine {
         switch outcome {
         case .unverified: .sourceSizeUnverified
         case .notSmaller: .outputNotSmaller
+        case .unchanged: .unchanged
         case .belowMinimum: .belowMinimumSavings
         case .qualifies: .outputNotSmaller
         }

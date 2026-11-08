@@ -23,6 +23,6 @@ struct SlimKitApp: App {
                 ContentView()
             }
         }
-        .modelContainer(for: [ReviewRecord.self, VerifiedSizeRecord.self])
+        .modelContainer(for: [ReviewRecord.self, VerifiedSizeRecord.self, CompressionWorkflowRecord.self])
     }
 }

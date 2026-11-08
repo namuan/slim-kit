@@ -19,6 +19,10 @@ final class CompressionDomainTests: XCTestCase {
             .notSmaller
         )
         XCTAssertEqual(
+            SavingsAssessment(source: .verified(1_000), outputBytes: 1_000).outcome,
+            .unchanged
+        )
+        XCTAssertEqual(
             SavingsAssessment(source: .verified(1_000), outputBytes: 960).outcome,
             .belowMinimum
         )

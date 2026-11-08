@@ -60,9 +60,13 @@ struct VideoCompressionEngine {
             savedBytes: savedBytes,
             savingsFraction: savingsFraction,
             outputTypeIdentifier: UTType.mpeg4Movie.identifier,
+            outputCodecIdentifier: output.properties.codecIdentifier,
             pixelWidth: output.properties.width,
             pixelHeight: output.properties.height,
-            outputURL: job.outputURL
+            videoDuration: output.properties.duration,
+            videoFrameRate: output.properties.frameRate,
+            outputURL: job.outputURL,
+            verifiedSource: input.verifiedSize
         )
         keepOutput = true
         return .compressed(artifact)
@@ -83,7 +87,7 @@ struct VideoCompressionEngine {
         guard let identity = try? fileIdentity(at: outputURL) else {
             throw CompressionEngineError.outputSizeUnavailable
         }
-        let properties = try await videoProperties(at: outputURL)
+        let properties = try await VideoFileInspector.properties(at: outputURL)
         let capabilities = await MediaCapabilityInspector.inspectVideo(at: outputURL)
         guard capabilities == .supported else {
             let sourceColor = [
@@ -202,15 +206,26 @@ struct VideoCompressionEngine {
         }
     }
 
-    fileprivate static func videoProperties(at url: URL) async throws -> VideoFileProperties {
+    fileprivate static func fileIdentity(at url: URL) throws -> VideoFileIdentity {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let byteCount = (attributes[.size] as? NSNumber)?.int64Value,
+              byteCount > 0,
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            throw CompressionEngineError.outputSizeUnavailable
+        }
+        return VideoFileIdentity(byteCount: byteCount, modificationDate: modificationDate)
+    }
+}
+
+private enum VideoFileInspector {
+    static func properties(at url: URL) async throws -> VideoFileProperties {
         let asset = AVURLAsset(url: url)
         let duration = try await asset.load(.duration)
         let tracks = try await asset.load(.tracks)
         let videoTracks = tracks.filter { $0.mediaType == .video }
         let audioTrackCount = tracks.filter { $0.mediaType == .audio }.count
         let otherTrackCount = tracks.count - videoTracks.count - audioTrackCount
-        guard videoTracks.count == 1,
-              let videoTrack = videoTracks.first else {
+        guard videoTracks.count == 1, let videoTrack = videoTracks.first else {
             let message = "Expected one video track at \(url.lastPathComponent); found \(videoTracks.count)"
             AppLogger.shared.error("VideoCompression", message)
             throw CompressionEngineError.outputValidationFailed
@@ -237,6 +252,7 @@ struct VideoCompressionEngine {
         }
         return VideoFileProperties(
             asset: asset,
+            codecIdentifier: codecIdentifier(CMFormatDescriptionGetMediaSubType(formatDescription)),
             duration: seconds,
             width: width,
             height: height,
@@ -248,16 +264,6 @@ struct VideoCompressionEngine {
             audioTrackCount: audioTrackCount,
             otherTrackCount: otherTrackCount
         )
-    }
-
-    fileprivate static func fileIdentity(at url: URL) throws -> VideoFileIdentity {
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard let byteCount = (attributes[.size] as? NSNumber)?.int64Value,
-              byteCount > 0,
-              let modificationDate = attributes[.modificationDate] as? Date else {
-            throw CompressionEngineError.outputSizeUnavailable
-        }
-        return VideoFileIdentity(byteCount: byteCount, modificationDate: modificationDate)
     }
 }
 
@@ -278,7 +284,7 @@ private enum VideoCompressionPreparer {
         guard capabilities == .supported else {
             return .skipped(.unsupportedSource(capabilities.logLabel))
         }
-        let properties = try await VideoCompressionEngine.videoProperties(at: input.sourceURL)
+        let properties = try await VideoFileInspector.properties(at: input.sourceURL)
         guard properties.frameRate.isFinite, properties.frameRate > 0 else {
             return .skipped(.unsupportedSource("The video frame rate could not be verified."))
         }
@@ -310,6 +316,7 @@ private enum VideoCompressionPreparer {
         switch outcome {
         case .unverified: .sourceSizeUnverified
         case .notSmaller: .outputNotSmaller
+        case .unchanged: .unchanged
         case .belowMinimum: .belowMinimumSavings
         case .qualifies: .outputNotSmaller
         }
@@ -341,6 +348,7 @@ private struct ValidatedVideoOutput {
 
 private struct VideoFileProperties {
     let asset: AVURLAsset
+    let codecIdentifier: String
     let duration: Double
     let width: Int
     let height: Int
@@ -351,6 +359,13 @@ private struct VideoFileProperties {
     let yCbCrMatrix: String?
     let audioTrackCount: Int
     let otherTrackCount: Int
+}
+
+private func codecIdentifier(_ subtype: FourCharCode) -> String {
+    let bytes = (0..<4).map { index in
+        UInt8(truncatingIfNeeded: subtype >> (24 - index * 8))
+    }
+    return String(bytes: bytes, encoding: .macOSRoman) ?? String(subtype)
 }
 
 private struct VideoFileIdentity: Equatable {

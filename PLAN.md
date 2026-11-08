@@ -2,7 +2,7 @@
 
 ## Current state
 
-The repository contains the native macOS app scaffold, Photos browser, conservative resource classifier, verified-size domain and cache, rolling file logs, and command-line build/test targets. Local image and SDR-video compression engines now produce validated artifacts without Photos mutations. Compression queue/UI integration, import verification, and deletion remain outstanding. This plan stages the remaining work with safety and technical validation ahead of destructive workflows.
+The repository contains the native macOS app, Photos browser, conservative resource classifier, verified-size cache, local compression queue, results review UI, import verification workflow, and explicit deletion/recovery gates. Import and deletion use injectable boundaries and have local tests, but neither has been validated against a live Photos library. This plan stages remaining hardening and technical validation ahead of any destructive live workflow.
 
 ## Guiding constraints
 
@@ -71,35 +71,35 @@ The repository contains the native macOS app scaffold, Photos browser, conservat
 
 ### 5. Results, import, and independent verification
 
-- [ ] Build a results review showing source/output sizes, reduction, format/codec, dimensions, preset, and known metadata changes.
-- [ ] Report batch success, failure, skip, unchanged, and size-unverified outcomes separately.
-- [ ] Import only validated output with public PhotoKit change requests and supported metadata restoration.
-- [ ] Persist the replacement identifier and workflow checkpoint as soon as available.
-- [ ] Re-fetch the replacement and verify media type, dimensions, video duration (within one frame), resource readability, and byte count against the validated output.
-- [ ] Verify selected creation date and location preservation; treat mismatches as verification failures.
-- [ ] Keep the original intact if import or any required verification is pending or fails.
+- [x] Build a results review showing source/output sizes, reduction, format/codec, dimensions, preset, and known metadata changes.
+- [x] Report batch success, failure, skip, unchanged, and size-unverified outcomes separately.
+- [x] Import only validated output with public PhotoKit change requests and supported metadata restoration.
+- [x] Persist the replacement identifier and workflow checkpoint as soon as available.
+- [x] Re-fetch the replacement and verify media type, dimensions, video duration (within one frame), resource readability, and byte count against the validated output.
+- [x] Verify selected creation date and location preservation; treat mismatches as verification failures.
+- [x] Keep the original intact if import or any required verification is pending or fails.
 
 **Exit criteria:** A replacement is considered verified only after all required independent checks pass; import callback success alone is insufficient.
 
 ### 6. Explicit original deletion and recovery
 
-- [ ] Present a separate deletion confirmation explaining unsupported edit/relationship preservation, Recently Deleted, and iCloud synchronization/storage behavior.
-- [ ] Immediately before deletion, re-fetch and re-check both source and replacement, source eligibility, and source identity/state.
-- [ ] Prevent deletion when source size is unverified, source changed, access is insufficient, or replacement verification is uncertain.
-- [ ] Delete only through PhotoKit change requests and record transaction outcome without claiming reclaimed storage.
-- [ ] Implement restart recovery and reconciliation for every durable workflow phase, including uncertain import/deletion outcomes.
-- [ ] Mark unresolved cases Needs Review; never blindly duplicate an import or delete the source during recovery.
+- [x] Present a separate deletion confirmation explaining unsupported edit/relationship preservation, Recently Deleted, and iCloud synchronization/storage behavior.
+- [x] Immediately before deletion, re-fetch and re-check both source and replacement, source eligibility, and source identity/state.
+- [x] Prevent deletion when source size is unverified, source changed, access is insufficient, or replacement verification is uncertain.
+- [x] Delete only through PhotoKit change requests and record transaction outcome without claiming reclaimed storage.
+- [x] Implement restart recovery and reconciliation for interrupted import/deletion outcomes, using checkpoints and local injected tests.
+- [x] Mark unresolved cases Needs Review; never blindly duplicate an import or delete the source during recovery.
 
 **Exit criteria:** Deletion is explicit, independently gated, auditable, and safe under interruption or uncertain outcomes.
 
 ### 7. Hardening and release readiness
 
-- [ ] Add unit tests for classification, eligibility, size and savings math, preset policy, state transitions, cancellation, error mapping, and recovery.
+- [x] Add unit tests for classification, eligibility, size and savings math, preset policy, state transitions, cancellation, error mapping, and recovery.
 - [ ] Add integration tests using a dedicated test Photos library; never run destructive tests against a personal library.
-- [ ] Exercise the safety scenarios in `SPEC.md`, especially crashes, source changes, verification failure, permission changes, disk exhaustion, and uncertain deletion.
+- [ ] Exercise the remaining safety scenarios in `SPEC.md`, especially live permission changes and ambiguous PhotoKit transaction outcomes.
 - [ ] Test representative supported/unsupported media from the compatibility matrix and document proven limits.
 - [ ] Profile 1k, 10k, 50k, and 100k asset libraries for responsiveness, memory, thumbnail behavior, and temporary-file cleanup.
-- [ ] Verify privacy, sandbox, permission strings, actionable errors, and user-facing storage terminology.
+- [x] Verify privacy, sandbox, permission strings, actionable errors, and user-facing storage terminology.
 
 **Exit criteria:** Safety tests pass, supported media behavior is documented, performance has been measured, and no workflow reports unverified savings or reclaimed storage.
 
@@ -110,7 +110,8 @@ The repository contains the native macOS app scaffold, Photos browser, conservat
 - **Domain safety slice — in progress:** Added verified-versus-estimated size states, preset and durable phase identifiers, savings assessment, deletion precondition gate, conservative resource/subtype eligibility classification, and a file-backed capability inspector. Sixty-nine XCTest cases cover size math, eligibility, verified-size sorting, cancellation during partial transfer, source/cache validity, deletion gates, image metadata, capability decisions, generated image/video/depth fixtures, disk-backed capability-cache restoration, stale-decision presentation, temporary-workspace cleanup, controlled-catalog measurement and rechecks, injected request-manager success/failure/network/cancellation paths, local image/video compression, compression-queue cleanup/progress/serialization/retention, and XCTest PhotoKit isolation. The deletion gate is not connected to a Photos mutation workflow.
 - **Compression milestone — complete, local pipeline only:** Added verified PhotoKit resource export into isolated workspaces, a serial batch queue (one active job), image/video phase progress, video export progress, transfer progress forwarding, cancellation between phases, and explicit per-job network permission. Failed, skipped, and cancelled jobs clean their workspace. Successful jobs remove the staged source, persist the validated output and manifest under `Application Support/SlimKit/Jobs/ReadyForImport`, and recheck retained byte counts during reconciliation. No Photos asset is changed.
 - **Build/test evidence:** `make test` passed with 69 tests; strict SwiftLint, `git diff --check`, `make build`, and strict code-signature verification passed. All new pipeline tests use local media fixtures and injected resource sources. The XCTest runtime guard disables live PhotoKit catalog, transfer, browser, thumbnail, and preview access. Live `PHAssetResourceManager` testing remains deferred because PhotoKit offers no public API for selecting a disposable test library; tests must not run against the personal account. Prior live browsing/export observations are not evidence for import or deletion safety.
-- **Not implemented:** Compression results UI, import verification, Photos deletion, restart workflow reconciliation beyond retained-output discovery, distribution-specific validation, and dedicated disposable-library integration. Additional live HDR/complex-video validation is intentionally deferred per user direction. Capability inspection fails closed on unknown metadata and updates the in-session eligibility label. A crash after live video preview was traced to SwiftUI AVKit `VideoPlayer` and replaced with AppKit `AVPlayerView`. Outbound sandbox networking resolved the observed iCloud hostname failure in one live preview.
+- **Milestones 5–6 — implemented with injected PhotoKit boundaries:** Added results review, batch summaries, explicit iCloud-consent choices, PhotoKit import with creation date/location restoration, durable per-artifact checkpoints, replacement re-fetch and independent resource/metadata/size verification, a separate destructive deletion confirmation, fresh pre-deletion checks, deletion outcome recording, and interrupted-operation reconciliation. Fakes cover matching/mismatching imports, pending verification, duplicate-import prevention, changed sources, explicit deletion approval, and uncertain deletion recovery. No live import or deletion was executed.
+- **Milestone 7 — partial hardening:** Automated local unit tests and privacy/test isolation are in place. Dedicated-library integration, broader compatibility coverage, distribution signing/sandbox validation, and 1k–100k library profiling remain outstanding. Additional live HDR/complex-video validation is intentionally deferred per user direction. Capability inspection fails closed on unknown metadata and updates the in-session eligibility label. A crash after live video preview was traced to SwiftUI AVKit `VideoPlayer` and replaced with AppKit `AVPlayerView`. Outbound sandbox networking resolved the observed iCloud hostname failure in one live preview.
 
 ## Investigation update
 
@@ -122,8 +123,8 @@ The repository contains the native macOS app scaffold, Photos browser, conservat
 
 ## Next implementation phase
 
-1. Keep all automated tests isolated: the XCTest runtime guard disables PhotoKit catalog, transfer, browser, thumbnail, and preview access. PhotoKit exposes only `sharedPhotoLibrary()` and no API to select an isolated library; any live request validation requires a manually configured disposable system library, never the personal account.
-2. Begin Milestone 5 with results review and independently verified import, using injectable PhotoKit boundaries and local tests only. Stop before requesting live Photos permission or performing an import until a disposable library and explicit human approval are available. Deletion remains a separate later milestone; live HDR/complex-video validation stays deferred per user direction.
+1. Keep all automated tests isolated: the XCTest runtime guard disables PhotoKit catalog, transfer, browser, thumbnail, preview, import, and deletion access. PhotoKit exposes only `sharedPhotoLibrary()` and no API to select an isolated library; any live validation requires a manually configured disposable system library, never the personal account.
+2. Complete command-line hardening and documentation locally. Stop before live Photos import/deletion validation or permission prompts until a disposable library and explicit human approval are available. Dedicated-library integration and large-library profiling remain outstanding; live HDR/complex-video validation stays deferred per user direction.
 
 ## Initial implementation order
 

@@ -29,6 +29,49 @@ struct CompressionQueueResult: Equatable, Sendable {
     let result: CompressionJobResult
 }
 
+struct CompressionBatchSummary: Equatable, Sendable {
+    let completedCount: Int
+    let skippedCount: Int
+    let unchangedCount: Int
+    let sizeUnverifiedCount: Int
+    let failedCount: Int
+    let cancelledCount: Int
+
+    init(results: [CompressionQueueResult]) {
+        var completed = 0
+        var skipped = 0
+        var unchanged = 0
+        var sizeUnverified = 0
+        var failed = 0
+        var cancelled = 0
+        for result in results {
+            switch result.result {
+            case .compressed:
+                completed += 1
+            case let .skipped(reason):
+                switch reason {
+                case .unchanged:
+                    unchanged += 1
+                case .sourceSizeUnverified:
+                    sizeUnverified += 1
+                default:
+                    skipped += 1
+                }
+            case .failed:
+                failed += 1
+            case .cancelled:
+                cancelled += 1
+            }
+        }
+        completedCount = completed
+        skippedCount = skipped
+        unchangedCount = unchanged
+        sizeUnverifiedCount = sizeUnverified
+        failedCount = failed
+        cancelledCount = cancelled
+    }
+}
+
 private struct CompressionQueueContext {
     let source: any ResourceExportSource
     let workspaceManager: CompressionWorkspaceManager

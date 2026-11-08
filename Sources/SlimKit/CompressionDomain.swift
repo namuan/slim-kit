@@ -78,6 +78,7 @@ struct SavingsAssessment: Equatable, Sendable {
     enum Outcome: Equatable, Sendable {
         case unverified
         case notSmaller
+        case unchanged
         case belowMinimum
         case qualifies(savedBytes: Int64, fraction: Double)
     }
@@ -90,7 +91,7 @@ struct SavingsAssessment: Equatable, Sendable {
             return
         }
         guard outputBytes < sourceBytes else {
-            outcome = .notSmaller
+            outcome = outputBytes == sourceBytes ? .unchanged : .notSmaller
             return
         }
         let savedBytes = sourceBytes - outputBytes
