@@ -21,7 +21,7 @@ struct ContentView: View {
     @State var showingSizeExportConfirmation = false
     @State private var capabilityCacheLogger = MediaCapabilityCacheLogger()
     @State var sortOrder = LibrarySortOrder.newest
-    @State var columnCount = 5
+    @AppStorage("thumbnailMinimumWidth") var thumbnailMinimumWidth = 230.0
     @State var compressionPreset = CompressionPreset.balanced
     @State var compressionResults: [CompressionQueueResult] = []
     @State var compressionProgress: CompressionQueueProgress?

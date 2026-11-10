@@ -4,6 +4,7 @@ extension ContentView {
     var libraryContent: some View {
         VStack(spacing: 0) {
             header
+            Divider()
             if library.accessState.canRead {
                 mediaBrowser
             } else {
@@ -205,30 +206,12 @@ extension ContentView {
     }
 
     var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(filter.rawValue)
-                    .font(.largeTitle.weight(.semibold))
-                Text(headerSummary)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("Sort", selection: $sortOrder) {
-                ForEach(LibrarySortOrder.allCases) { order in
-                    Text(order.rawValue).tag(order)
-                }
-            }
-            .frame(width: 150)
-            Picker("Columns", selection: $columnCount) {
-                Text("4 columns").tag(4)
-                Text("5 columns").tag(5)
-                Text("6 columns").tag(6)
-                Text("7 columns").tag(7)
-            }
-            .frame(width: 130)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 18)
+        MediaBrowserHeader(
+            title: filter.rawValue,
+            summary: headerSummary,
+            sortOrder: $sortOrder,
+            thumbnailMinimumWidth: $thumbnailMinimumWidth
+        )
     }
 
     var mediaBrowser: some View {
@@ -248,33 +231,27 @@ extension ContentView {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount),
-                        spacing: 12
-                    ) {
-                        ForEach(visibleAssets) { asset in
-                            MediaCard(
-                                asset: MediaCapabilityCachePresentation.asset(
-                                    for: asset,
-                                    record: sizeRecordsByID[asset.id]
-                                ),
-                                sizeLabel: MediaSizePresentation.label(
-                                    for: asset,
-                                    record: sizeRecordsByID[asset.id]
-                                ),
-                                isSelected: selectedIDs.contains(asset.id),
-                                isKept: keptIDs.contains(asset.id),
-                                onSelect: { toggleSelection(asset.id) },
-                                onKeep: { setKept(!keptIDs.contains(asset.id), for: asset.id) },
-                                onPreview: { previewAsset = asset }
-                            )
-                        }
+                MediaBrowserGrid(preferredWidth: thumbnailMinimumWidth) { layout in
+                    ForEach(visibleAssets) { asset in
+                        MediaCard(
+                            asset: MediaCapabilityCachePresentation.asset(
+                                for: asset,
+                                record: sizeRecordsByID[asset.id]
+                            ),
+                            sizeLabel: MediaSizePresentation.label(
+                                for: asset,
+                                record: sizeRecordsByID[asset.id]
+                            ),
+                            thumbnailHeight: layout.thumbnailHeight,
+                            isSelected: selectedIDs.contains(asset.id),
+                            isKept: keptIDs.contains(asset.id),
+                            onSelect: { toggleSelection(asset.id) },
+                            onKeep: { setKept(!keptIDs.contains(asset.id), for: asset.id) },
+                            onPreview: { previewAsset = asset }
+                        )
                     }
-                    .padding(20)
                 }
             }
         }
     }
-
 }

@@ -5,6 +5,7 @@ import SwiftUI
 struct MediaCard: View {
     let asset: MediaAsset
     let sizeLabel: String
+    let thumbnailHeight: CGFloat
     let isSelected: Bool
     let isKept: Bool
     let onSelect: () -> Void
@@ -17,31 +18,13 @@ struct MediaCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Button(action: onSelect) {
-                ZStack(alignment: .topTrailing) {
-                    thumbnailContent
-                        .frame(height: 150)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    if asset.kind == .video {
-                        Label(durationText, systemImage: "play.fill")
-                            .font(.caption2.weight(.semibold))
-                            .padding(6)
-                            .background(.black.opacity(0.68), in: Capsule())
-                            .foregroundStyle(.white)
-                            .padding(7)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    }
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(isSelected ? .white : .white, isSelected ? .blue : .black.opacity(0.45))
-                        .padding(7)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 3)
-                }
+                MediaThumbnail(
+                    image: thumbnail,
+                    height: thumbnailHeight,
+                    isVideo: asset.kind == .video,
+                    durationText: durationText,
+                    isSelected: isSelected
+                )
             }
             .buttonStyle(.plain)
             .contextMenu {
@@ -66,32 +49,18 @@ struct MediaCard: View {
             Text(sizeLabel)
                 .font(.caption2)
                 .foregroundStyle(sizeLabel.contains("verified") ? .secondary : .tertiary)
+                .lineLimit(1)
             Text(eligibilitySummary)
                 .font(.caption2)
                 .foregroundStyle(asset.eligibility.requiresReview ? .orange : .secondary)
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .combine)
         .task(id: asset.id) {
             loadThumbnail()
         }
         .onDisappear(perform: cancelThumbnailRequest)
-    }
-
-    @ViewBuilder
-    private var thumbnailContent: some View {
-        if let thumbnail {
-            Image(nsImage: thumbnail)
-                .resizable()
-                .scaledToFill()
-        } else {
-            Rectangle()
-                .fill(.quaternary)
-                .overlay {
-                    Image(systemName: asset.kind == .video ? "video" : "photo")
-                        .foregroundStyle(.secondary)
-                }
-        }
     }
 
     private var eligibilitySummary: String {
